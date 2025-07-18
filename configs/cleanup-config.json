@@ -1,0 +1,28 @@
+{
+    "resourceGroupName": "rg-github-runner-win2025",
+    "subscriptionId": "your-azure-subscription-id",
+    "tenantId": "your-azure-tenant-id",
+    "cleanupSchedule": {
+        "time": "23:00",
+        "frequency": "daily",
+        "enabled": true
+    },
+    "notifications": {
+        "enabled": false,
+        "emailRecipients": [
+            "admin@yourcompany.com"
+        ],
+        "webhookUrl": ""
+    },
+    "safety": {
+        "requireForceParameter": true,
+        "maxRetries": 3,
+        "retryDelaySeconds": 60,
+        "timeoutMinutes": 30
+    },
+    "logging": {
+        "logLevel": "Info",
+        "logRetentionDays": 30,
+        "logPath": "C:\\Logs\\AzureCleanup"
+    }
+}

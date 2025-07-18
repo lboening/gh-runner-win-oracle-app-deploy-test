@@ -1,0 +1,137 @@
+name: Deploy Windows Runner Environment
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'development'
+        type: choice
+        options:
+        - development
+        - staging
+        - production
+      skip_oracle:
+        description: 'Skip Oracle installation'
+        required: false
+        type: boolean
+        default: false
+      skip_features:
+        description: 'Skip Windows Features installation'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+  AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
+
+jobs:
+  deploy-runner-environment:
+    runs-on: [self-hosted, windows]
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup PowerShell
+      uses: microsoft/setup-msbuild@v1.1
+      
+    - name: Validate prerequisites
+      shell: pwsh
+      run: |
+        Write-Host "Validating prerequisites..."
+        .\scripts\utilities\Test-Prerequisites.ps1
+        
+    - name: Install Windows Features
+      if: ${{ !inputs.skip_features }}
+      shell: pwsh
+      run: |
+        Write-Host "Installing Windows Features..."
+        .\scripts\setup\Install-WindowsFeatures.ps1
+        
+    - name: Install Oracle Database
+      if: ${{ !inputs.skip_oracle }}
+      shell: pwsh
+      env:
+        ORACLE_PASSWORD: ${{ secrets.ORACLE_PASSWORD }}
+      run: |
+        Write-Host "Installing Oracle Express Edition..."
+        .\scripts\setup\Install-Oracle.ps1 -Password $env:ORACLE_PASSWORD
+        
+    - name: Deploy applications from Azure Blob Storage
+      shell: pwsh
+      run: |
+        Write-Host "Deploying applications..."
+        $Config = Import-PowerShellDataFile ".\configs\applications\application-config.psd1"
+        
+        foreach ($AppName in $Config.Keys) {
+          Write-Host "Deploying application: $AppName"
+          $App = $Config[$AppName]
+          
+          .\scripts\deployment\Deploy-ThirdPartyApplication.ps1 `
+            -StorageAccountName $App.StorageAccount `
+            -ContainerName $App.Container `
+            -BlobName $App.BlobName `
+            -DownloadPath $App.DownloadPath `
+            -AccessKey $env:AZURE_STORAGE_KEY `
+            -InstallParameters $App.InstallParameters
+        }
+        
+    - name: Configure IIS for applications
+      shell: pwsh
+      run: |
+        Write-Host "Configuring IIS..."
+        $Config = Import-PowerShellDataFile ".\configs\applications\application-config.psd1"
+        
+        foreach ($AppName in $Config.Keys) {
+          $App = $Config[$AppName]
+          if ($App.PostInstall.ConfigureIIS) {
+            Write-Host "Configuring IIS for: $AppName"
+            .\scripts\utilities\Configure-IISApplication.ps1 `
+              -SiteName $App.PostInstall.SiteName `
+              -PhysicalPath $App.PostInstall.PhysicalPath `
+              -AppPoolName $App.PostInstall.AppPoolName `
+              -Port $App.PostInstall.Port `
+              -NetFrameworkVersion $App.PostInstall.NetFrameworkVersion
+          }
+        }
+        
+    - name: Validate environment
+      shell: pwsh
+      run: |
+        Write-Host "Validating environment..."
+        $ValidationResult = .\scripts\validation\Test-Environment.ps1
+        
+        if (!$ValidationResult) {
+          Write-Error "Environment validation failed"
+          exit 1
+        }
+        
+    - name: Generate deployment report
+      shell: pwsh
+      run: |
+        Write-Host "Generating deployment report..."
+        $Report = @{
+          Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+          Environment = "${{ inputs.environment }}"
+          WindowsFeatures = $(if ("${{ inputs.skip_features }}" -eq "true") { "Skipped" } else { "Installed" })
+          Oracle = $(if ("${{ inputs.skip_oracle }}" -eq "true") { "Skipped" } else { "Installed" })
+          Applications = @()
+        }
+        
+        $Config = Import-PowerShellDataFile ".\configs\applications\application-config.psd1"
+        foreach ($AppName in $Config.Keys) {
+          $Report.Applications += $AppName
+        }
+        
+        $Report | ConvertTo-Json -Depth 3 | Out-File "deployment-report.json"
+        
+    - name: Upload deployment artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: deployment-report-${{ inputs.environment }}
+        path: |
+          deployment-report.json
+          C:\Logs\*.log
