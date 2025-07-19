@@ -1028,3 +1028,26 @@ jobs:
               });
             }
           }
+    - name: Validate required secrets
+      shell: pwsh
+      run: |
+        $RequiredSecrets = @(
+            "AZURE_CLIENT_ID",
+            "AZURE_CLIENT_SECRET", 
+            "AZURE_TENANT_ID",
+            "AZURE_SUBSCRIPTION_ID"
+        )
+        
+        Write-Host "Checking for required secrets..."
+        $ExistingSecrets = gh secret list --json name | ConvertFrom-Json | Select-Object -ExpandProperty name
+        $MissingSecrets = $RequiredSecrets | Where-Object { $_ -notin $ExistingSecrets }
+        
+        if ($MissingSecrets.Count -eq 0) {
+            Write-Host "✅ All required secrets are configured" -ForegroundColor Green
+        } else {
+            Write-Host "❌ Missing required secrets:" -ForegroundColor Red
+            $MissingSecrets | ForEach-Object { Write-Host "  - $_" -ForegroundColor Red }
+            exit 1
+        }
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

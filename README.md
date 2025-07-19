@@ -1,6 +1,7 @@
 # GitHub Runner Windows Oracle Application Deployment
 
-This repository provides comprehensive automation scripts and templates for setting up Windows Server 2025 DataCenter in Azure as a GitHub self-hosted runner with IIS, Oracle Database, and third-party application deployment capabilities.
+This repository provides comprehensive automation scripts and templates for setting up Windows Server 2025 DataCenter.
+The GitHub self-hosted runner includes IIS, Oracle Database, and third-party application deployment capabilities.
 
 ## 🚀 Quick Start
 
@@ -47,15 +48,6 @@ This repository provides comprehensive automation scripts and templates for sett
 - ✅ Automated testing and validation
 - ✅ **Automated daily resource cleanup for cost optimization**
 
-## 📖 Documentation
-
-- [Complete Setup Guide](docs/setup-guides/COMPLETE_SETUP_GUIDE.md)
-- [Azure VM Configuration](docs/setup-guides/AZURE_VM_SETUP.md)
-- [GitHub Runner Setup](docs/setup-guides/GITHUB_RUNNER_SETUP.md)
-- [Oracle Database Setup](docs/setup-guides/ORACLE_SETUP.md)
-- [Application Deployment](docs/setup-guides/APPLICATION_DEPLOYMENT.md)
-- [Troubleshooting Guide](docs/troubleshooting/COMMON_ISSUES.md)
-
 ## 🔧 Configuration
 
 See the `configs/` directory for example configurations:
@@ -66,7 +58,7 @@ See the `configs/` directory for example configurations:
 
 ## 💰 Cost Optimization
 
-This project includes automated cleanup scripts that run daily at 23:00 to delete the entire Azure resource group, helping to minimize costs when the environment is not in use.
+This project includes automated cleanup scripts that run daily at 23:00 to delete the entire Azure resource group.
 
 **⚠️ IMPORTANT**: The cleanup scripts will permanently delete all resources in the specified resource group!
 
@@ -102,3 +94,32 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 🤝 Contributing
 
 Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
+
+## 📚 References
+
+### 📁 Documentation
+
+- **[Azure Monitor Integration Guide](docs/Azure-Monitor-Integration-Guide.md)** - Comprehensive guide for
+  integrating with Azure Monitor
+- **[Azure VM Setup Guide](docs/setup-guides/AZURE_VM_SETUP.md)** - Step-by-step instructions for setting up
+  Azure VMs
+
+### 🔧 Scripts & Automation
+
+- **[Cleanup Scripts Documentation](scripts/cleanup/README.md)** - Detailed guide for automated Azure resource cleanup
+- **[Integration Tests Guide](tests/integration/README.md)** - Documentation for running integration tests
+
+### ⚙️ GitHub Actions & Workflows
+
+- **[Quality Checks Workflow](\.github\workflows\README.md)** - Documentation for the quality checks GitHub Actions workflow
+- **[Workflow Configuration Guide](\.github\workflows\CONFIGURATION.md)** - Configuration options for GitHub Actions workflows
+
+### 🔗 Quick Navigation
+
+All documentation is organized into the following categories:
+
+- **Setup Guides**: Step-by-step installation and configuration instructions
+- **Scripts Documentation**: Detailed guides for PowerShell automation scripts
+- **Integration**: Testing and validation documentation
+- **Workflows**: GitHub Actions and CI/CD pipeline documentation
+- **Monitoring**: Azure Monitor and logging integration guides
