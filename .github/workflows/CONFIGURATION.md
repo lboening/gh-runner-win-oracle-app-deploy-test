@@ -2,6 +2,14 @@
 
 This directory contains examples of configuration files for customizing the quality checks workflow.
 
+## Synopsis
+
+This document provides examples of how to configure the quality checks workflow for your project. It includes settings for markdown linting, PowerShell script analysis, link checking, and more.
+
+## Description
+
+The following examples demonstrate how to set up and use enhanced logging with Azure Monitor integration in your PowerShell scripts.
+
 ## Markdownlint Configuration (.markdownlint.json)
 
 Create this file in your repository root to customize markdown linting rules:
