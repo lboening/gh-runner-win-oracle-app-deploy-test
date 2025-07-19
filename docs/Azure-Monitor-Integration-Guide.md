@@ -56,7 +56,7 @@ The enhanced logging utility provides comprehensive integration with Azure Monit
     -SubscriptionId "your-subscription-id"
 ```
 
-*Update existing scripts** to use enhanced logging
+_Update existing scripts_ to use enhanced logging
 
 ```powershell
 # Replace this:

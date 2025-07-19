@@ -1,9 +1,11 @@
 # GitHub Runner Windows Oracle Application Deployment
 
+## Synopsis
+
 This repository provides comprehensive automation scripts and templates for setting up Windows Server 2025 DataCenter.
 The GitHub self-hosted runner includes IIS, Oracle Database, and third-party application deployment capabilities.
 
-## 🚀 Quick Start
+## 🚀 Description
 
 1. **Prerequisites**
    - Azure subscription with appropriate permissions
@@ -103,6 +105,8 @@ Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduc
   integrating with Azure Monitor
 - **[Azure VM Setup Guide](docs/setup-guides/AZURE_VM_SETUP.md)** - Step-by-step instructions for setting up
   Azure VMs
+- **[GitHub CLI Azure Authorization Setup](docs/setup-guides/GITHUB_CLI_AZURE_AUTH_SETUP.md)** - Complete guide for
+  setting up GitHub CLI and Azure service principal authentication
 
 ### 🔧 Scripts & Automation
 
