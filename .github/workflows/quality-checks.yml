@@ -213,6 +213,139 @@ jobs:
         cat link-check-report.md >> markdown-quality-summary.md
         echo "" >> markdown-quality-summary.md
         cat remark-report.md >> markdown-quality-summary.md
+
+    - name: Generate Markdown CTRF test results
+      if: steps.find-md.outputs.files-found > 0
+      run: |
+        echo "Creating Markdown CTRF test results..."
+        
+        # Create CTRF directory
+        mkdir -p ctrf
+        
+        # Initialize test results
+        TESTS_JSON="[]"
+        PASSED_COUNT=0
+        FAILED_COUNT=0
+        TOTAL_COUNT=0
+        
+        # Parse markdownlint results
+        if [ -f "markdownlint-results.txt" ] && [ -s "markdownlint-results.txt" ]; then
+          echo "Processing markdownlint results..."
+          ISSUE_COUNT=$(wc -l < markdownlint-results.txt)
+          TESTS_JSON=$(echo "$TESTS_JSON" | jq --arg name "Markdownlint Checks" \
+            --arg status "$([ $ISSUE_COUNT -eq 0 ] && echo "passed" || echo "failed")" \
+            --arg message "Markdownlint issues found: $ISSUE_COUNT" \
+            --arg trace "$([ $ISSUE_COUNT -gt 0 ] && cat markdownlint-results.txt | head -10 | sed 's/"/\\"/g' | tr '\n' ' ' || echo "")" \
+            '. += [{
+              "name": $name,
+              "status": $status,
+              "duration": 0,
+              "message": $message,
+              "trace": $trace,
+              "suite": "Markdown Quality",
+              "type": "linting"
+            }]')
+          if [ $ISSUE_COUNT -eq 0 ]; then
+            PASSED_COUNT=$((PASSED_COUNT + 1))
+          else
+            FAILED_COUNT=$((FAILED_COUNT + 1))
+          fi
+          TOTAL_COUNT=$((TOTAL_COUNT + 1))
+        fi
+        
+        # Parse link check results
+        if [ -f "link-check-results.txt" ]; then
+          if grep -q "ERROR:" "link-check-results.txt"; then
+            LINK_STATUS="FAILED"
+          else
+            LINK_STATUS="PASSED"
+          fi
+        else
+          LINK_STATUS="PASSED"
+        fi
+        TESTS_JSON=$(echo "$TESTS_JSON" | jq --arg name "Markdown Link Check" \
+          --arg status "$([ "$LINK_STATUS" = "PASSED" ] && echo "passed" || echo "failed")" \
+          --arg message "Link check status: $LINK_STATUS" \
+          --arg trace "$([ "$LINK_STATUS" != "PASSED" ] && echo "Check link-check-results.txt for details" || echo "")" \
+          '. += [{
+            "name": $name,
+            "status": $status,
+            "duration": 0,
+            "message": $message,
+            "trace": $trace,
+            "suite": "Markdown Quality",
+            "type": "link-checking"
+          }]')
+        if [ "$LINK_STATUS" = "PASSED" ]; then
+          PASSED_COUNT=$((PASSED_COUNT + 1))
+        else
+          FAILED_COUNT=$((FAILED_COUNT + 1))
+        fi
+        TOTAL_COUNT=$((TOTAL_COUNT + 1))
+        
+        # Parse remark results
+        if [ -f "remark-results.txt" ]; then
+          REMARK_ISSUES=$([ -s "remark-results.txt" ] && echo "failed" || echo "passed")
+          TESTS_JSON=$(echo "$TESTS_JSON" | jq --arg name "Remark Lint Checks" \
+            --arg status "$REMARK_ISSUES" \
+            --arg message "Remark lint check $([ "$REMARK_ISSUES" = "passed" ] && echo "passed" || echo "found issues")" \
+            --arg trace "$([ "$REMARK_ISSUES" = "failed" ] && cat remark-results.txt | head -5 | sed 's/"/\\"/g' | tr '\n' ' ' || echo "")" \
+            '. += [{
+              "name": $name,
+              "status": $status,
+              "duration": 0,
+              "message": $message,
+              "trace": $trace,
+              "suite": "Markdown Quality",
+              "type": "linting"
+            }]')
+          if [ "$REMARK_ISSUES" = "passed" ]; then
+            PASSED_COUNT=$((PASSED_COUNT + 1))
+          else
+            FAILED_COUNT=$((FAILED_COUNT + 1))
+          fi
+          TOTAL_COUNT=$((TOTAL_COUNT + 1))
+        fi
+        
+        # Create CTRF JSON
+        cat > ctrf/markdown-test-results.json << EOF
+        {
+          "results": {
+            "tool": {
+              "name": "Markdown Quality Checks",
+              "version": "1.0.0"
+            },
+            "summary": {
+              "tests": $TOTAL_COUNT,
+              "passed": $PASSED_COUNT,
+              "failed": $FAILED_COUNT,
+              "pending": 0,
+              "skipped": 0,
+              "other": 0,
+              "start": "$(date --iso-8601=seconds)",
+              "stop": "$(date --iso-8601=seconds)"
+            },
+            "tests": $TESTS_JSON
+          }
+        }
+        EOF
+        
+        echo "Markdown CTRF test results generated successfully"
+
+    - name: Publish Markdown Test Results
+      uses: ctrf-io/github-test-reporter@v1
+      if: always() && steps.find-md.outputs.files-found > 0
+      with:
+        report-path: './ctrf/markdown-test-results.json'
+        summary-report: true
+        failed-report: true
+        test-report: true
+        pull-request: ${{ github.event_name == 'pull_request' }}
+        title: '📝 Markdown Quality Test Results'
+        comment-tag: 'markdown-quality-${{ github.workflow }}-${{ github.job }}'
+        update-comment: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         
     - name: Upload markdown quality artifacts
       uses: actions/upload-artifact@v4
@@ -225,6 +358,7 @@ jobs:
           link-check-results.txt
           remark-results.txt
           markdown-files.txt
+          ctrf/markdown-test-results.json
         retention-days: 30
 
   powershell-quality:
@@ -511,6 +645,121 @@ jobs:
         } else {
             "⚠️ **WARNINGS FOUND** - Please review warnings and information messages" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
         }
+
+    - name: Generate PowerShell CTRF test results
+      shell: pwsh
+      run: |
+        Write-Host "Creating PowerShell CTRF test results..."
+        
+        # Create CTRF directory
+        New-Item -ItemType Directory -Path "ctrf" -Force | Out-Null
+        
+        # Load PSScriptAnalyzer results
+        $TestResults = @()
+        $AllIssues = @()
+        
+        if (Test-Path "psscriptanalyzer-results.json") {
+          try {
+            $AllIssues = Get-Content "psscriptanalyzer-results.json" | ConvertFrom-Json
+          } catch {
+            Write-Host "Could not parse PSScriptAnalyzer results JSON"
+          }
+        }
+        
+        # Group issues by file for individual test results
+        $FileGroups = $AllIssues | Group-Object ScriptPath
+        
+        foreach ($FileGroup in $FileGroups) {
+          $FilePath = $FileGroup.Name -replace [regex]::Escape((Get-Location).Path), "."
+          $FileIssues = $FileGroup.Group
+          
+          $ErrorCount = ($FileIssues | Where-Object Severity -eq "Error").Count
+          $WarningCount = ($FileIssues | Where-Object Severity -eq "Warning").Count
+          $InfoCount = ($FileIssues | Where-Object Severity -eq "Information").Count
+          
+          $TestStatus = if ($ErrorCount -gt 0) { "failed" } elseif ($WarningCount -gt 0) { "passed" } else { "passed" }
+          $TestMessage = "Errors: $ErrorCount, Warnings: $WarningCount, Info: $InfoCount"
+          
+          $TestResults += @{
+            name = "PowerShell Analysis: $FilePath"
+            status = $TestStatus
+            duration = 0
+            message = $TestMessage
+            trace = if ($ErrorCount -gt 0) { ($FileIssues | Where-Object Severity -eq "Error" | ForEach-Object { "Line $($_.Line): $($_.RuleName) - $($_.Message)" }) -join "`n" } else { "" }
+            suite = "PowerShell Quality"
+            type = "static-analysis"
+            filePath = $FilePath
+          }
+        }
+        
+        # Add summary tests
+        $SyntaxErrors = if ($env:SYNTAX_ERRORS) { [int]$env:SYNTAX_ERRORS } else { 0 }
+        $TotalIssues = if ($env:TOTAL_ISSUES) { [int]$env:TOTAL_ISSUES } else { 0 }
+        $ErrorCount = if ($env:ERROR_COUNT) { [int]$env:ERROR_COUNT } else { 0 }
+        
+        $TestResults += @{
+          name = "PowerShell Syntax Validation"
+          status = if ($SyntaxErrors -eq 0) { "passed" } else { "failed" }
+          duration = 0
+          message = "Syntax errors found: $SyntaxErrors"
+          trace = if ($SyntaxErrors -gt 0) { "Check powershell-additional-checks.md for details" } else { "" }
+          suite = "PowerShell Quality"
+          type = "syntax"
+        }
+        
+        $TestResults += @{
+          name = "PowerShell Best Practices"
+          status = if ($ErrorCount -eq 0) { "passed" } else { "failed" }
+          duration = 0
+          message = "PSScriptAnalyzer errors: $ErrorCount, Total issues: $TotalIssues"
+          trace = if ($ErrorCount -gt 0) { "Check psscriptanalyzer-report.md for details" } else { "" }
+          suite = "PowerShell Quality"
+          type = "best-practices"
+        }
+        
+        # Calculate summary
+        $PassedTests = ($TestResults | Where-Object status -eq "passed").Count
+        $FailedTests = ($TestResults | Where-Object status -eq "failed").Count
+        $TotalTests = $TestResults.Count
+        
+        # Create CTRF JSON
+        $CTRFReport = @{
+          results = @{
+            tool = @{
+              name = "PowerShell Quality Checks"
+              version = "1.0.0"
+            }
+            summary = @{
+              tests = $TotalTests
+              passed = $PassedTests
+              failed = $FailedTests
+              pending = 0
+              skipped = 0
+              other = 0
+              start = "$(Get-Date -Format "yyyy-MM-ddTHH:mm:ss.fffZ")"
+              stop = (Get-Date -Format "yyyy-MM-ddTHH:mm:ss.fffZ")
+            }
+            tests = $TestResults
+          }
+        }
+        
+        $CTRFReport | ConvertTo-Json -Depth 10 | Out-File -FilePath "ctrf/powershell-test-results.json" -Encoding UTF8
+        Write-Host "PowerShell CTRF test results generated successfully"
+
+    - name: Publish PowerShell Test Results
+      uses: ctrf-io/github-test-reporter@v1
+      with:
+        report-path: './ctrf/powershell-test-results.json'
+        summary-report: true
+        failed-report: true
+        test-report: true
+        pull-request: ${{ github.event_name == 'pull_request' }}
+        title: '🔧 PowerShell Quality Test Results'
+        comment-tag: 'powershell-quality-${{ github.workflow }}-${{ github.job }}'
+        update-comment: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      if: always()
         
     - name: Upload PowerShell quality artifacts
       uses: actions/upload-artifact@v4
@@ -525,6 +774,7 @@ jobs:
           powershell-additional-checks.md
           powershell-files.txt
           PSScriptAnalyzer-Settings.psd1
+          ctrf/powershell-test-results.json
         retention-days: 30
 
   security-scan:
@@ -586,6 +836,107 @@ jobs:
     - name: Download all artifacts
       uses: actions/download-artifact@v4
       
+    - name: Convert quality results to CTRF format
+      run: |
+        # Create CTRF test results directory
+        mkdir -p ctrf
+        
+        # Convert quality check results to CTRF format
+        cat > ctrf/quality-test-results.json << 'EOF'
+        {
+          "results": {
+            "tool": {
+              "name": "Quality Checks Workflow",
+              "version": "1.0.0"
+            },
+            "summary": {
+              "tests": 3,
+              "passed": 0,
+              "failed": 0,
+              "pending": 0,
+              "skipped": 0,
+              "other": 0,
+              "start": "$(date --iso-8601=seconds)",
+              "stop": "$(date --iso-8601=seconds)"
+            },
+            "tests": [
+              {
+                "name": "Markdown Quality Checks",
+                "status": "${{ needs.markdown-quality.result == 'success' && 'passed' || 'failed' }}",
+                "duration": 0,
+                "message": "${{ needs.markdown-quality.result == 'success' && 'All markdown quality checks passed' || 'Markdown quality checks failed' }}",
+                "trace": "${{ needs.markdown-quality.result != 'success' && 'Check markdown-quality job for details' || '' }}",
+                "rawStatus": "${{ needs.markdown-quality.result }}",
+                "suite": "Quality Checks",
+                "type": "quality"
+              },
+              {
+                "name": "PowerShell Quality Checks", 
+                "status": "${{ needs.powershell-quality.result == 'success' && 'passed' || 'failed' }}",
+                "duration": 0,
+                "message": "${{ needs.powershell-quality.result == 'success' && 'All PowerShell quality checks passed' || 'PowerShell quality checks failed' }}",
+                "trace": "${{ needs.powershell-quality.result != 'success' && 'Check powershell-quality job for details' || '' }}",
+                "rawStatus": "${{ needs.powershell-quality.result }}",
+                "suite": "Quality Checks",
+                "type": "quality"
+              },
+              {
+                "name": "Security Scan",
+                "status": "${{ needs.security-scan.result == 'success' && 'passed' || 'failed' }}",
+                "duration": 0,
+                "message": "${{ needs.security-scan.result == 'success' && 'Security scan completed successfully' || 'Security scan failed or found issues' }}",
+                "trace": "${{ needs.security-scan.result != 'success' && 'Check security-scan job for details' || '' }}",
+                "rawStatus": "${{ needs.security-scan.result }}",
+                "suite": "Quality Checks",
+                "type": "security"
+              }
+            ]
+          }
+        }
+        EOF
+        
+        # Update summary counts
+        PASSED_COUNT=0
+        FAILED_COUNT=0
+        
+        if [ "${{ needs.markdown-quality.result }}" = "success" ]; then
+          PASSED_COUNT=$((PASSED_COUNT + 1))
+        else
+          FAILED_COUNT=$((FAILED_COUNT + 1))
+        fi
+        
+        if [ "${{ needs.powershell-quality.result }}" = "success" ]; then
+          PASSED_COUNT=$((PASSED_COUNT + 1))
+        else
+          FAILED_COUNT=$((FAILED_COUNT + 1))
+        fi
+        
+        if [ "${{ needs.security-scan.result }}" = "success" ]; then
+          PASSED_COUNT=$((PASSED_COUNT + 1))
+        else
+          FAILED_COUNT=$((FAILED_COUNT + 1))
+        fi
+        
+        # Update the JSON with actual counts
+        sed -i "s/\"passed\": 0/\"passed\": $PASSED_COUNT/" ctrf/quality-test-results.json
+        sed -i "s/\"failed\": 0/\"failed\": $FAILED_COUNT/" ctrf/quality-test-results.json
+
+    - name: Publish Test Results with GitHub Test Reporter
+      uses: ctrf-io/github-test-reporter@v1
+      with:
+        report-path: './ctrf/*.json'
+        summary-report: true
+        failed-report: true
+        test-report: true
+        pull-request: ${{ github.event_name == 'pull_request' }}
+        title: '🔍 Quality Check Test Results'
+        comment-tag: 'quality-checks-${{ github.workflow }}-${{ github.job }}'
+        update-comment: true
+        github-report: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      if: always()
+
     - name: Generate overall quality report
       run: |
         echo "# Overall Quality Check Report" > quality-summary.md
@@ -621,7 +972,9 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: quality-summary-report
-        path: quality-summary.md
+        path: |
+          quality-summary.md
+          ctrf/quality-test-results.json
         retention-days: 90
         
     - name: Comment on PR (if applicable)
