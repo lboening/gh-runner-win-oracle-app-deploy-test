@@ -1,0 +1,640 @@
+name: Quality Checks
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+env:
+  # PowerShell configuration
+  PSScriptAnalyzerVersion: '1.21.0'
+  # Markdown configuration
+  MarkdownlintVersion: '0.37.0'
+
+jobs:
+  markdown-quality:
+    name: Markdown Quality Checks
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        
+    - name: Create package.json for markdown tools
+      run: |
+        cat > package.json << 'EOF'
+        {
+          "name": "markdown-quality-checks",
+          "version": "1.0.0",
+          "description": "Markdown quality checking tools",
+          "private": true,
+          "devDependencies": {
+            "markdownlint-cli": "^${{ env.MarkdownlintVersion }}",
+            "markdown-link-check": "^3.11.2",
+            "remark-cli": "^12.0.0",
+            "remark-preset-lint-recommended": "^6.1.3",
+            "remark-preset-lint-consistent": "^5.1.2"
+          }
+        }
+        EOF
+        
+    - name: Install markdown tools
+      run: npm install
+      
+    - name: Create markdownlint configuration
+      run: |
+        cat > .markdownlint.json << 'EOF'
+        {
+          "default": true,
+          "MD001": true,
+          "MD003": { "style": "atx" },
+          "MD007": { "indent": 2 },
+          "MD013": { "line_length": 120, "code_blocks": false, "tables": false },
+          "MD022": true,
+          "MD024": { "allow_different_nesting": true },
+          "MD025": { "front_matter_title": "" },
+          "MD026": { "punctuation": ".,;:!?" },
+          "MD029": { "style": "ordered" },
+          "MD033": { "allowed_elements": ["br", "sub", "sup", "img", "details", "summary"] },
+          "MD034": false,
+          "MD036": false,
+          "MD040": true,
+          "MD041": false,
+          "MD046": { "style": "fenced" },
+          "MD049": { "style": "underscore" },
+          "MD050": { "style": "asterisk" }
+        }
+        EOF
+        
+    - name: Create markdown link check configuration
+      run: |
+        cat > .markdown-link-check.json << 'EOF'
+        {
+          "ignorePatterns": [
+            {
+              "pattern": "^https://portal.azure.com"
+            },
+            {
+              "pattern": "^https://github.com/.*/(issues|pull)/.*"
+            },
+            {
+              "pattern": "^mailto:"
+            }
+          ],
+          "httpHeaders": [
+            {
+              "urls": ["https://docs.microsoft.com", "https://learn.microsoft.com"],
+              "headers": {
+                "User-Agent": "Mozilla/5.0 (compatible; Markdown Link Check)"
+              }
+            }
+          ],
+          "timeout": "10s",
+          "retryOn429": true,
+          "retryCount": 3,
+          "fallbackRetryDelay": "30s",
+          "aliveStatusCodes": [200, 206, 999]
+        }
+        EOF
+        
+    - name: Find Markdown files
+      id: find-md
+      run: |
+        find . -name "*.md" -not -path "./.git/*" -not -path "./node_modules/*" > markdown-files.txt
+        echo "Found $(wc -l < markdown-files.txt) markdown files"
+        cat markdown-files.txt
+        echo "files-found=$(wc -l < markdown-files.txt)" >> $GITHUB_OUTPUT
+        
+    - name: Run markdownlint
+      if: steps.find-md.outputs.files-found > 0
+      run: |
+        echo "Running markdownlint on markdown files..."
+        npx markdownlint --config .markdownlint.json $(cat markdown-files.txt | tr '\n' ' ') \
+          --output markdownlint-results.txt || true
+        
+        # Create detailed report
+        if [ -s markdownlint-results.txt ]; then
+          echo "## Markdownlint Issues Found" > markdownlint-report.md
+          echo "" >> markdownlint-report.md
+          echo '```' >> markdownlint-report.md
+          cat markdownlint-results.txt >> markdownlint-report.md
+          echo '```' >> markdownlint-report.md
+          
+          # Count issues
+          ISSUE_COUNT=$(wc -l < markdownlint-results.txt)
+          echo "Found $ISSUE_COUNT markdownlint issues"
+          echo "issue-count=$ISSUE_COUNT" >> $GITHUB_ENV
+        else
+          echo "No markdownlint issues found"
+          echo "## Markdownlint Results: ✅ PASSED" > markdownlint-report.md
+          echo "issue-count=0" >> $GITHUB_ENV
+        fi
+        
+    - name: Check markdown links
+      if: steps.find-md.outputs.files-found > 0
+      run: |
+        echo "Checking markdown links..."
+        LINK_CHECK_FAILED=0
+        
+        # Check each file individually to get better error reporting
+        while IFS= read -r file; do
+          echo "Checking links in: $file"
+          if ! npx markdown-link-check "$file" --config .markdown-link-check.json >> link-check-results.txt 2>&1; then
+            LINK_CHECK_FAILED=1
+          fi
+        done < markdown-files.txt
+        
+        # Create report
+        if [ $LINK_CHECK_FAILED -eq 1 ]; then
+          echo "## Link Check Issues Found" > link-check-report.md
+          echo "" >> link-check-report.md
+          echo '```' >> link-check-report.md
+          cat link-check-results.txt >> link-check-report.md
+          echo '```' >> link-check-report.md
+          echo "link-check-status=FAILED" >> $GITHUB_ENV
+        else
+          echo "## Link Check Results: ✅ PASSED" > link-check-report.md
+          echo "link-check-status=PASSED" >> $GITHUB_ENV
+        fi
+        
+    - name: Run remark lint
+      if: steps.find-md.outputs.files-found > 0
+      run: |
+        echo "Running remark lint..."
+        
+        # Create remark configuration
+        cat > .remarkrc.json << 'EOF'
+        {
+          "plugins": [
+            "remark-preset-lint-recommended",
+            "remark-preset-lint-consistent"
+          ]
+        }
+        EOF
+        
+        npx remark $(cat markdown-files.txt | tr '\n' ' ') --frail --quiet > remark-results.txt 2>&1 || true
+        
+        if [ -s remark-results.txt ]; then
+          echo "## Remark Lint Issues Found" > remark-report.md
+          echo "" >> remark-report.md
+          echo '```' >> remark-report.md
+          cat remark-results.txt >> remark-report.md
+          echo '```' >> remark-report.md
+        else
+          echo "## Remark Lint Results: ✅ PASSED" > remark-report.md
+        fi
+        
+    - name: Generate markdown quality summary
+      run: |
+        cat > markdown-quality-summary.md << 'EOF'
+        # Markdown Quality Check Summary
+        
+        ## Files Processed
+        - **Total Markdown Files**: ${{ steps.find-md.outputs.files-found }}
+        
+        ## Results Overview
+        - **Markdownlint Issues**: ${{ env.issue-count || '0' }}
+        - **Link Check Status**: ${{ env.link-check-status || 'PASSED' }}
+        
+        EOF
+        
+        # Append individual reports
+        cat markdownlint-report.md >> markdown-quality-summary.md
+        echo "" >> markdown-quality-summary.md
+        cat link-check-report.md >> markdown-quality-summary.md
+        echo "" >> markdown-quality-summary.md
+        cat remark-report.md >> markdown-quality-summary.md
+        
+    - name: Upload markdown quality artifacts
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: markdown-quality-reports
+        path: |
+          markdown-quality-summary.md
+          markdownlint-results.txt
+          link-check-results.txt
+          remark-results.txt
+          markdown-files.txt
+        retention-days: 30
+
+  powershell-quality:
+    name: PowerShell Quality Checks
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup PowerShell
+      shell: pwsh
+      run: |
+        Write-Host "PowerShell version: $($PSVersionTable.PSVersion)"
+        Write-Host "OS: $($PSVersionTable.OS)"
+        
+    - name: Install PSScriptAnalyzer
+      shell: pwsh
+      run: |
+        Write-Host "Installing PSScriptAnalyzer version $env:PSScriptAnalyzerVersion..."
+        Install-Module -Name PSScriptAnalyzer -RequiredVersion $env:PSScriptAnalyzerVersion -Force -Scope CurrentUser
+        Import-Module PSScriptAnalyzer
+        Get-Module PSScriptAnalyzer
+        
+    - name: Find PowerShell files
+      shell: pwsh
+      id: find-ps1
+      run: |
+        $PSFiles = Get-ChildItem -Path . -Recurse -Include "*.ps1", "*.psm1", "*.psd1" | 
+                   Where-Object { $_.FullName -notlike "*\.git\*" -and $_.FullName -notlike "*\node_modules\*" }
+        
+        $PSFiles | ForEach-Object { $_.FullName } | Out-File -FilePath "powershell-files.txt" -Encoding UTF8
+        
+        Write-Host "Found $($PSFiles.Count) PowerShell files:"
+        $PSFiles | ForEach-Object { Write-Host "  $($_.FullName)" }
+        
+        Add-Content -Path $env:GITHUB_OUTPUT -Value "files-found=$($PSFiles.Count)"
+        
+    - name: Create PSScriptAnalyzer settings
+      shell: pwsh
+      run: |
+        $Settings = @{
+            Rules = @{
+                PSAvoidUsingCmdletAliases = @{
+                    Enable = $true
+                    Whitelist = @('cd', 'cp', 'mv', 'rm', 'ls')
+                }
+                PSAvoidUsingPositionalParameters = @{
+                    Enable = $true
+                    CommandAllowList = @('Join-Path', 'Split-Path')
+                }
+                PSPlaceOpenBrace = @{
+                    Enable = $true
+                    OnSameLine = $true
+                    NewLineAfter = $true
+                    IgnoreOneLineBlock = $true
+                }
+                PSPlaceCloseBrace = @{
+                    Enable = $true
+                    NewLineAfter = $true
+                    IgnoreOneLineBlock = $true
+                    NoEmptyLineBefore = $false
+                }
+                PSUseConsistentWhitespace = @{
+                    Enable = $true
+                    CheckInnerBrace = $true
+                    CheckOpenBrace = $true
+                    CheckOpenParen = $true
+                    CheckOperator = $true
+                    CheckPipe = $true
+                    CheckSeparator = $true
+                    CheckParameter = $false
+                }
+                PSUseConsistentIndentation = @{
+                    Enable = $true
+                    IndentationSize = 4
+                    PipelineIndentation = 'IncreaseIndentationForFirstPipeline'
+                    Kind = 'space'
+                }
+                PSAvoidUsingDoubleQuotesForConstantString = @{
+                    Enable = $true
+                }
+            }
+            ExcludeRules = @(
+                'PSUseShouldProcessForStateChangingFunctions'
+            )
+            Severity = @('Error', 'Warning', 'Information')
+        }
+        
+        $Settings | ConvertTo-Json -Depth 10 | Out-File -FilePath "PSScriptAnalyzer-Settings.psd1" -Encoding UTF8
+        
+    - name: Run PSScriptAnalyzer
+      shell: pwsh
+      if: steps.find-ps1.outputs.files-found > 0
+      run: |
+        Write-Host "Running PSScriptAnalyzer on PowerShell files..."
+        
+        $AllIssues = @()
+        $FileResults = @{}
+        $TotalFiles = 0
+        $FilesWithIssues = 0
+        
+        Get-Content "powershell-files.txt" | ForEach-Object {
+            $FilePath = $_.Trim()
+            if ($FilePath -and (Test-Path $FilePath)) {
+                $TotalFiles++
+                Write-Host "Analyzing: $FilePath"
+                
+                try {
+                    $Issues = Invoke-ScriptAnalyzer -Path $FilePath -Settings "PSScriptAnalyzer-Settings.psd1" -Recurse:$false
+                    
+                    if ($Issues) {
+                        $FilesWithIssues++
+                        $FileResults[$FilePath] = $Issues
+                        $AllIssues += $Issues
+                        
+                        Write-Host "  Found $($Issues.Count) issues" -ForegroundColor Yellow
+                    } else {
+                        Write-Host "  No issues found" -ForegroundColor Green
+                    }
+                } catch {
+                    Write-Warning "Failed to analyze $FilePath : $($_.Exception.Message)"
+                }
+            }
+        }
+        
+        Write-Host "`nSummary:"
+        Write-Host "  Total files analyzed: $TotalFiles"
+        Write-Host "  Files with issues: $FilesWithIssues"
+        Write-Host "  Total issues found: $($AllIssues.Count)"
+        
+        # Create detailed report
+        Write-Host "Creating PowerShell analysis report..."
+        
+        # Start with header
+        "# PowerShell Script Analysis Report" | Out-File -FilePath "psscriptanalyzer-report.md" -Encoding UTF8
+        "" | Out-File -FilePath "psscriptanalyzer-report.md" -Append -Encoding UTF8
+        "## Summary" | Out-File -FilePath "psscriptanalyzer-report.md" -Append -Encoding UTF8
+        "- **Total Files Analyzed**: $TotalFiles" | Out-File -FilePath "psscriptanalyzer-report.md" -Append -Encoding UTF8
+        "- **Files with Issues**: $FilesWithIssues" | Out-File -FilePath "psscriptanalyzer-report.md" -Append -Encoding UTF8
+        "- **Total Issues Found**: $($AllIssues.Count)" | Out-File -FilePath "psscriptanalyzer-report.md" -Append -Encoding UTF8
+        "" | Out-File -FilePath "psscriptanalyzer-report.md" -Append -Encoding UTF8
+        "## Issue Breakdown by Severity" | Out-File -FilePath "psscriptanalyzer-report.md" -Append -Encoding UTF8
+        
+        $SeverityGroups = $AllIssues | Group-Object Severity
+        foreach ($Group in $SeverityGroups) {
+            "- **$($Group.Name)**: $($Group.Count)" | Out-File -FilePath "psscriptanalyzer-report.md" -Append -Encoding UTF8
+        }
+        
+        "" | Out-File -FilePath "psscriptanalyzer-report.md" -Append -Encoding UTF8
+        "## Issues by Rule" | Out-File -FilePath "psscriptanalyzer-report.md" -Append -Encoding UTF8
+        $RuleGroups = $AllIssues | Group-Object RuleName | Sort-Object Count -Descending
+        foreach ($Group in $RuleGroups) {
+            "- **$($Group.Name)**: $($Group.Count)" | Out-File -FilePath "psscriptanalyzer-report.md" -Append -Encoding UTF8
+        }
+        
+        if ($AllIssues.Count -gt 0) {
+            "" | Out-File -FilePath "psscriptanalyzer-report.md" -Append -Encoding UTF8
+            "## Detailed Issues" | Out-File -FilePath "psscriptanalyzer-report.md" -Append -Encoding UTF8
+            "" | Out-File -FilePath "psscriptanalyzer-report.md" -Append -Encoding UTF8
+            
+            foreach ($File in $FileResults.Keys) {
+                $RelativePath = $File -replace [regex]::Escape((Get-Location).Path), "."
+                "" | Out-File -FilePath "psscriptanalyzer-report.md" -Append -Encoding UTF8
+                "### $RelativePath" | Out-File -FilePath "psscriptanalyzer-report.md" -Append -Encoding UTF8
+                "" | Out-File -FilePath "psscriptanalyzer-report.md" -Append -Encoding UTF8
+                
+                $FileResults[$File] | Sort-Object Line | ForEach-Object {
+                    "- **Line $($_.Line)**: [$($_.Severity)] $($_.RuleName) - $($_.Message)" | Out-File -FilePath "psscriptanalyzer-report.md" -Append -Encoding UTF8
+                }
+            }
+        }
+        
+        $Report | Out-File -FilePath "psscriptanalyzer-report.md" -Encoding UTF8
+        
+        # Create JSON output for further processing
+        $AllIssues | ConvertTo-Json -Depth 10 | Out-File -FilePath "psscriptanalyzer-results.json" -Encoding UTF8
+        
+        # Create simple text output
+        $AllIssues | Format-Table -AutoSize | Out-String | Out-File -FilePath "psscriptanalyzer-results.txt" -Encoding UTF8
+        
+        # Set environment variables for summary
+        Add-Content -Path $env:GITHUB_ENV -Value "total-files=$TotalFiles"
+        Add-Content -Path $env:GITHUB_ENV -Value "files-with-issues=$FilesWithIssues"
+        Add-Content -Path $env:GITHUB_ENV -Value "total-issues=$($AllIssues.Count)"
+        Add-Content -Path $env:GITHUB_ENV -Value "error-count=$(($AllIssues | Where-Object Severity -eq 'Error').Count)"
+        Add-Content -Path $env:GITHUB_ENV -Value "warning-count=$(($AllIssues | Where-Object Severity -eq 'Warning').Count)"
+        Add-Content -Path $env:GITHUB_ENV -Value "info-count=$(($AllIssues | Where-Object Severity -eq 'Information').Count)"
+        
+    - name: Run additional PowerShell checks
+      shell: pwsh
+      if: steps.find-ps1.outputs.files-found > 0
+      run: |
+        Write-Host "Running additional PowerShell quality checks..."
+        
+        # Start additional report
+        "# Additional PowerShell Quality Checks" | Out-File -FilePath "powershell-additional-checks.md" -Encoding UTF8
+        "" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
+        "## Syntax Validation" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
+        
+        $SyntaxErrors = 0
+        Get-Content "powershell-files.txt" | ForEach-Object {
+            $FilePath = $_.Trim()
+            if ($FilePath -and (Test-Path $FilePath)) {
+                try {
+                    $null = [System.Management.Automation.PSParser]::Tokenize((Get-Content $FilePath -Raw), [ref]$null)
+                    "- ✅ $FilePath - Syntax OK" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
+                } catch {
+                    $SyntaxErrors++
+                    "- ❌ $FilePath - Syntax Error: $($_.Exception.Message)" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
+                }
+            }
+        }
+        
+        "" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
+        "## PowerShell Best Practices Check" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
+        
+        # Check for common best practices
+        $BestPracticeIssues = 0
+        Get-Content "powershell-files.txt" | ForEach-Object {
+            $FilePath = $_.Trim()
+            if ($FilePath -and (Test-Path $FilePath)) {
+                $Content = Get-Content $FilePath -Raw
+                
+                # Check for hardcoded credentials
+                if ($Content -match 'password\s*=|pwd\s*=|secret\s*=') {
+                    $BestPracticeIssues++
+                    "- ⚠️ $FilePath - Possible hardcoded credentials detected" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
+                }
+                
+                # Check for Write-Host usage (should prefer Write-Output)
+                if ($Content -match 'Write-Host') {
+                    "- ℹ️ $FilePath - Contains Write-Host (consider Write-Output for better testability)" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
+                }
+                
+                # Check for proper error handling
+                if ($Content -match 'try\s*{' -and $Content -notmatch 'catch\s*{') {
+                    $BestPracticeIssues++
+                    "- ⚠️ $FilePath - Try block without catch block" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
+                }
+            }
+        }
+        
+        "" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
+        "## Summary" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
+        "- **Syntax Errors**: $SyntaxErrors" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
+        "- **Best Practice Issues**: $BestPracticeIssues" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
+        
+        Add-Content -Path $env:GITHUB_ENV -Value "syntax-errors=$SyntaxErrors"
+        Add-Content -Path $env:GITHUB_ENV -Value "best-practice-issues=$BestPracticeIssues"
+        
+    - name: Generate PowerShell quality summary
+      shell: pwsh
+      run: |
+        Write-Host "Creating PowerShell quality summary..."
+        
+        # Create summary file
+        "# PowerShell Quality Check Summary" | Out-File -FilePath "powershell-quality-summary.md" -Encoding UTF8
+        "" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
+        "## Files Processed" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
+        "- **Total PowerShell Files**: ${{ steps.find-ps1.outputs.files-found }}" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
+        "" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
+        "## PSScriptAnalyzer Results" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
+        "- **Files with Issues**: ${{ env.files-with-issues }}" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
+        "- **Total Issues**: ${{ env.total-issues }}" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
+        "  - **Errors**: ${{ env.error-count }}" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
+        "  - **Warnings**: ${{ env.warning-count }}" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
+        "  - **Information**: ${{ env.info-count }}" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
+        "" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
+        "## Additional Checks" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
+        "- **Syntax Errors**: ${{ env.syntax-errors }}" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
+        "- **Best Practice Issues**: ${{ env.best-practice-issues }}" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
+        "" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
+        "## Status" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
+        
+        if ($env:TOTAL_ISSUES -eq "0" -and $env:SYNTAX_ERRORS -eq "0") {
+            "✅ **ALL CHECKS PASSED**" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
+        } elseif ($env:ERROR_COUNT -gt "0" -or $env:SYNTAX_ERRORS -gt "0") {
+            "❌ **CRITICAL ISSUES FOUND** - Please review and fix errors" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
+        } else {
+            "⚠️ **WARNINGS FOUND** - Please review warnings and information messages" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
+        }
+        
+    - name: Upload PowerShell quality artifacts
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: powershell-quality-reports
+        path: |
+          powershell-quality-summary.md
+          psscriptanalyzer-report.md
+          psscriptanalyzer-results.json
+          psscriptanalyzer-results.txt
+          powershell-additional-checks.md
+          powershell-files.txt
+          PSScriptAnalyzer-Settings.psd1
+        retention-days: 30
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+        
+    - name: Upload security scan artifacts
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: security-scan-results
+        path: trivy-results.sarif
+        retention-days: 30
+
+  quality-summary:
+    name: Quality Summary
+    runs-on: ubuntu-latest
+    needs: [markdown-quality, powershell-quality, security-scan]
+    if: always()
+    
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      
+    - name: Generate overall quality report
+      run: |
+        echo "# Overall Quality Check Report" > quality-summary.md
+        echo "" >> quality-summary.md
+        echo "**Date**: $(date)" >> quality-summary.md
+        echo "**Commit**: ${{ github.sha }}" >> quality-summary.md
+        echo "**Branch**: ${{ github.ref_name }}" >> quality-summary.md
+        echo "" >> quality-summary.md
+        
+        echo "## Job Results" >> quality-summary.md
+        echo "- **Markdown Quality**: ${{ needs.markdown-quality.result }}" >> quality-summary.md
+        echo "- **PowerShell Quality**: ${{ needs.powershell-quality.result }}" >> quality-summary.md
+        echo "- **Security Scan**: ${{ needs.security-scan.result }}" >> quality-summary.md
+        echo "" >> quality-summary.md
+        
+        # Include individual reports if they exist
+        if [ -f markdown-quality-reports/markdown-quality-summary.md ]; then
+          echo "---" >> quality-summary.md
+          cat markdown-quality-reports/markdown-quality-summary.md >> quality-summary.md
+        fi
+        
+        if [ -f powershell-quality-reports/powershell-quality-summary.md ]; then
+          echo "---" >> quality-summary.md
+          cat powershell-quality-reports/powershell-quality-summary.md >> quality-summary.md
+        fi
+        
+        echo "" >> quality-summary.md
+        echo "---" >> quality-summary.md
+        echo "Generated by GitHub Actions Quality Check Workflow" >> quality-summary.md
+        
+    - name: Upload combined quality report
+      uses: actions/upload-artifact@v4
+      with:
+        name: quality-summary-report
+        path: quality-summary.md
+        retention-days: 90
+        
+    - name: Comment on PR (if applicable)
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          
+          if (fs.existsSync('quality-summary.md')) {
+            const report = fs.readFileSync('quality-summary.md', 'utf8');
+            
+            // Find existing comment
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            const existingComment = comments.data.find(comment => 
+              comment.body.includes('Quality Check Report') && comment.user.login === 'github-actions[bot]'
+            );
+            
+            const commentBody = `## 🔍 Quality Check Report\n\n${report}`;
+            
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existingComment.id,
+                body: commentBody
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: commentBody
+              });
+            }
+          }
