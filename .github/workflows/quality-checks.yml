@@ -197,9 +197,11 @@ jobs:
         # Markdown Quality Check Summary
         
         ## Files Processed
+        
         - **Total Markdown Files**: ${{ steps.find-md.outputs.files-found }}
         
         ## Results Overview
+        
         - **Markdownlint Issues**: ${{ env.issue-count || '0' }}
         - **Link Check Status**: ${{ env.link-check-status || 'PASSED' }}
         
@@ -483,9 +485,11 @@ jobs:
         "# PowerShell Quality Check Summary" | Out-File -FilePath "powershell-quality-summary.md" -Encoding UTF8
         "" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
         "## Files Processed" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
+        "" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
         "- **Total PowerShell Files**: ${{ steps.find-ps1.outputs.files-found }}" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
         "" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
         "## PSScriptAnalyzer Results" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
+        "" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
         "- **Files with Issues**: ${{ env.files-with-issues }}" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
         "- **Total Issues**: ${{ env.total-issues }}" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
         "  - **Errors**: ${{ env.error-count }}" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
@@ -493,10 +497,12 @@ jobs:
         "  - **Information**: ${{ env.info-count }}" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
         "" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
         "## Additional Checks" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
+        "" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
         "- **Syntax Errors**: ${{ env.syntax-errors }}" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
         "- **Best Practice Issues**: ${{ env.best-practice-issues }}" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
         "" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
         "## Status" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
+        "" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
         
         if ($env:TOTAL_ISSUES -eq "0" -and $env:SYNTAX_ERRORS -eq "0") {
             "✅ **ALL CHECKS PASSED**" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
@@ -590,6 +596,7 @@ jobs:
         echo "" >> quality-summary.md
         
         echo "## Job Results" >> quality-summary.md
+        echo "" >> quality-summary.md
         echo "- **Markdown Quality**: ${{ needs.markdown-quality.result }}" >> quality-summary.md
         echo "- **PowerShell Quality**: ${{ needs.powershell-quality.result }}" >> quality-summary.md
         echo "- **Security Scan**: ${{ needs.security-scan.result }}" >> quality-summary.md
