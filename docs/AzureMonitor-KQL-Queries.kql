@@ -1,0 +1,286 @@
+// Azure Monitor KQL Queries for GitHub Runner Logs
+// Use these queries in Log Analytics workspace to analyze your GitHub Runner logs
+
+// ============================================================================
+// BASIC QUERIES
+// ============================================================================
+
+// 1. All GitHub Runner logs from the last 24 hoursfeat: Add comprehensive Azure Monitor integration to logging system
+
+- Enhanced Write-Log.ps1 with structured JSON logging and Azure Monitor support
+- Added operation/correlation IDs, performance metrics, and custom properties
+- Implemented Azure Data Collector API integration with retry logic and batching
+- Created Write-Log-Enhanced.ps1 with advanced features:
+  * Log batching and asynchronous sending for performance
+  * Performance tracking wrapper (Measure-LoggedOperation)
+  * Enhanced log levels (Trace, Critical) and event IDs
+  * Log file rotation and compression
+  * Memory/CPU usage tracking and Azure resource context
+- Added azure-monitor-config.json for centralized configuration
+- Created Configure-AzureMonitor.ps1 setup script with connection testing
+- Provided 33 pre-built KQL queries for log analysis and monitoring
+- Added comprehensive documentation and usage examples
+- Enhanced workspace configuration with VS Code tasks and debugging
+
+This transforms simple text logging into a comprehensive observability platform
+that leverages Azure Monitor's full capabilities for monitoring, alerting,
+and analyzing the GitHub Runner environment.
+GitHubRunnerLogs_CL
+| where TimeGenerated >= ago(24h)
+| order by TimeGenerated desc
+
+// 2. Error logs only
+GitHubRunnerLogs_CL
+| where Level_s == "Error"
+| order by TimeGenerated desc
+
+// 3. Logs by component
+GitHubRunnerLogs_CL
+| where TimeGenerated >= ago(24h)
+| summarize Count = count() by Component_s
+| order by Count desc
+
+// 4. Performance metrics over time
+GitHubRunnerLogs_CL
+| where TimeGenerated >= ago(24h)
+| where isnotnull(Duration_d)
+| summarize AvgDuration = avg(Duration_d), MaxDuration = max(Duration_d), MinDuration = min(Duration_d) by bin(TimeGenerated, 1h)
+| order by TimeGenerated
+
+// ============================================================================
+// OPERATIONAL MONITORING
+// ============================================================================
+
+// 5. Operations that took longer than 5 seconds
+GitHubRunnerLogs_CL
+| where Duration_d > 5000  // Duration in milliseconds
+| project TimeGenerated, Component_s, EventName_s, Duration_d, Message_s, OperationId_g
+| order by Duration_d desc
+
+// 6. Failed operations
+GitHubRunnerLogs_CL
+| where EventName_s == "OperationFailed"
+| project TimeGenerated, Component_s, Message_s, OperationId_g, ErrorDetails_s
+| order by TimeGenerated desc
+
+// 7. Memory usage trends
+GitHubRunnerLogs_CL
+| where TimeGenerated >= ago(24h)
+| where isnotnull(MemoryUsageMB_d)
+| summarize AvgMemory = avg(MemoryUsageMB_d), MaxMemory = max(MemoryUsageMB_d) by bin(TimeGenerated, 15m)
+| order by TimeGenerated
+
+// 8. Error rate by hour
+GitHubRunnerLogs_CL
+| where TimeGenerated >= ago(24h)
+| summarize 
+    TotalLogs = count(),
+    ErrorLogs = countif(Level_s == "Error"),
+    ErrorRate = round(100.0 * countif(Level_s == "Error") / count(), 2)
+    by bin(TimeGenerated, 1h)
+| order by TimeGenerated
+
+// ============================================================================
+// DEPLOYMENT AND APPLICATION MONITORING
+// ============================================================================
+
+// 9. Application deployment events
+GitHubRunnerLogs_CL
+| where Component_s == "Deploy-ThirdPartyApplication"
+| order by TimeGenerated desc
+
+// 10. Oracle integration test results
+GitHubRunnerLogs_CL
+| where Component_s contains "Oracle"
+| project TimeGenerated, Level_s, Message_s, Component_s
+| order by TimeGenerated desc
+
+// 11. Cleanup operations
+GitHubRunnerLogs_CL
+| where Component_s contains "Cleanup" or Message_s contains "cleanup"
+| order by TimeGenerated desc
+
+// 12. GitHub Runner environment setup
+GitHubRunnerLogs_CL
+| where Component_s == "GitHubRunnerEnvironment" or Message_s contains "runner"
+| order by TimeGenerated desc
+
+// ============================================================================
+// CORRELATION AND TRACING
+// ============================================================================
+
+// 13. Trace specific operation by OperationId
+GitHubRunnerLogs_CL
+| where OperationId_g == "YOUR_OPERATION_ID_HERE"
+| order by TimeGenerated
+
+// 14. Find correlated operations
+GitHubRunnerLogs_CL
+| where CorrelationId_g == "YOUR_CORRELATION_ID_HERE"
+| order by TimeGenerated
+
+// 15. Operation flow analysis
+GitHubRunnerLogs_CL
+| where EventName_s in ("OperationStart", "OperationComplete", "OperationFailed")
+| project TimeGenerated, EventName_s, Component_s, OperationId_g, Duration_d
+| order by TimeGenerated
+
+// ============================================================================
+// SECURITY AND COMPLIANCE
+// ============================================================================
+
+// 16. User activity tracking
+GitHubRunnerLogs_CL
+| summarize 
+    LogCount = count(),
+    FirstActivity = min(TimeGenerated),
+    LastActivity = max(TimeGenerated)
+    by User_s
+| order by LogCount desc
+
+// 17. Computer activity summary
+GitHubRunnerLogs_CL
+| where TimeGenerated >= ago(24h)
+| summarize 
+    LogCount = count(),
+    ErrorCount = countif(Level_s == "Error"),
+    Components = make_set(Component_s)
+    by Computer_s
+| order by LogCount desc
+
+// 18. Privilege escalation attempts (if logged)
+GitHubRunnerLogs_CL
+| where Message_s contains "administrator" or Message_s contains "elevated"
+| project TimeGenerated, User_s, Computer_s, Message_s, Level_s
+
+// ============================================================================
+// PERFORMANCE DASHBOARDS
+// ============================================================================
+
+// 19. Real-time error dashboard (last 5 minutes)
+GitHubRunnerLogs_CL
+| where TimeGenerated >= ago(5m)
+| where Level_s in ("Error", "Critical")
+| project TimeGenerated, Component_s, Message_s, Computer_s
+| order by TimeGenerated desc
+
+// 20. Top slow operations
+GitHubRunnerLogs_CL
+| where TimeGenerated >= ago(24h)
+| where isnotnull(Duration_d)
+| top 10 by Duration_d
+| project TimeGenerated, Component_s, EventName_s, Duration_d, Message_s
+
+// 21. System health metrics
+GitHubRunnerLogs_CL
+| where TimeGenerated >= ago(1h)
+| summarize 
+    AvgMemoryMB = avg(MemoryUsageMB_d),
+    MaxMemoryMB = max(MemoryUsageMB_d),
+    AvgCPUSeconds = avg(CPUTimeSeconds_d),
+    LogVolume = count()
+    by bin(TimeGenerated, 5m)
+| order by TimeGenerated
+
+// ============================================================================
+// CUSTOM ALERTS
+// ============================================================================
+
+// 22. Alert: High error rate (>10% in last 15 minutes)
+GitHubRunnerLogs_CL
+| where TimeGenerated >= ago(15m)
+| summarize 
+    TotalLogs = count(),
+    ErrorLogs = countif(Level_s == "Error"),
+    ErrorRate = round(100.0 * countif(Level_s == "Error") / count(), 2)
+| where ErrorRate > 10
+
+// 23. Alert: Operation taking too long (>30 seconds)
+GitHubRunnerLogs_CL
+| where TimeGenerated >= ago(5m)
+| where Duration_d > 30000  // 30 seconds in milliseconds
+| project TimeGenerated, Component_s, EventName_s, Duration_d, Message_s
+
+// 24. Alert: Memory usage spike (>1GB)
+GitHubRunnerLogs_CL
+| where TimeGenerated >= ago(5m)
+| where MemoryUsageMB_d > 1024
+| project TimeGenerated, Computer_s, Component_s, MemoryUsageMB_d, Message_s
+
+// ============================================================================
+// WORKBOOK VISUALIZATIONS
+// ============================================================================
+
+// 25. Time series for log levels
+GitHubRunnerLogs_CL
+| where TimeGenerated >= ago(24h)
+| summarize count() by bin(TimeGenerated, 1h), Level_s
+| order by TimeGenerated
+
+// 26. Component activity heatmap
+GitHubRunnerLogs_CL
+| where TimeGenerated >= ago(24h)
+| summarize count() by bin(TimeGenerated, 1h), Component_s
+| order by TimeGenerated
+
+// 27. Performance distribution
+GitHubRunnerLogs_CL
+| where TimeGenerated >= ago(24h)
+| where isnotnull(Duration_d)
+| summarize 
+    count(),
+    percentiles(Duration_d, 50, 90, 95, 99)
+    by Component_s
+
+// ============================================================================
+// TROUBLESHOOTING QUERIES
+// ============================================================================
+
+// 28. Find logs around specific error
+GitHubRunnerLogs_CL
+| where TimeGenerated between (datetime('2025-07-18 10:00:00') .. datetime('2025-07-18 11:00:00'))
+| where Computer_s == "YOUR_COMPUTER_NAME"
+| order by TimeGenerated
+
+// 29. Operation timeline reconstruction
+GitHubRunnerLogs_CL
+| where OperationId_g == "YOUR_OPERATION_ID"
+| project TimeGenerated, EventName_s, Component_s, Message_s, Duration_d
+| order by TimeGenerated
+
+// 30. Find patterns in error messages
+GitHubRunnerLogs_CL
+| where Level_s == "Error"
+| where TimeGenerated >= ago(7d)
+| summarize count() by Message_s
+| order by count_ desc
+
+// ============================================================================
+// MAINTENANCE AND CLEANUP
+// ============================================================================
+
+// 31. Log volume by day
+GitHubRunnerLogs_CL
+| where TimeGenerated >= ago(30d)
+| summarize LogCount = count() by bin(TimeGenerated, 1d)
+| order by TimeGenerated
+
+// 32. Find duplicate operations
+GitHubRunnerLogs_CL
+| where TimeGenerated >= ago(24h)
+| where isnotnull(OperationId_g)
+| summarize count() by OperationId_g
+| where count_ > 1
+| order by count_ desc
+
+// 33. Component usage statistics
+GitHubRunnerLogs_CL
+| where TimeGenerated >= ago(30d)
+| summarize 
+    TotalLogs = count(),
+    ErrorCount = countif(Level_s == "Error"),
+    AvgDuration = avg(Duration_d),
+    UniqueUsers = dcount(User_s),
+    UniqueComputers = dcount(Computer_s)
+    by Component_s
+| order by TotalLogs desc

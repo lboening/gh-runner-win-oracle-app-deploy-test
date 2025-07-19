@@ -1,0 +1,30 @@
+{
+    "azureMonitor": {
+        "enabled": true,
+        "workspaceId": "",
+        "sharedKey": "",
+        "logType": "GitHubRunnerLogs",
+        "dataCollectionEndpoint": "",
+        "dataCollectionRuleId": "",
+        "streamName": "Custom-GitHubRunnerLogs",
+        "batchSize": 100,
+        "batchTimeout": 30,
+        "retryCount": 3,
+        "retryDelay": 5
+    },
+    "logging": {
+        "enableStructuredLogging": true,
+        "enableBatching": true,
+        "enableMetrics": true,
+        "logRetentionDays": 90,
+        "compressOldLogs": true,
+        "enablePerformanceTracking": true
+    },
+    "customFields": {
+        "environment": "Development",
+        "region": "East US",
+        "resourceGroup": "rg-github-runner-win2025",
+        "subscriptionId": "",
+        "applicationVersion": "1.0.0"
+    }
+}

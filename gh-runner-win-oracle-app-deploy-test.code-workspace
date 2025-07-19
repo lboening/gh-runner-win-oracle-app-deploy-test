@@ -1,0 +1,262 @@
+{
+	"folders": [
+		{
+			"name": "GitHub Runner Win Oracle App Deploy",
+			"path": "."
+		}
+	],
+	"settings": {
+		"files.associations": {
+			"*.ps1": "powershell",
+			"*.psd1": "powershell",
+			"*.psm1": "powershell",
+			"*.yml": "yaml",
+			"*.yaml": "yaml"
+		},
+		"powershell.codeFormatting.preset": "OTBS",
+		"powershell.codeFormatting.openBraceOnSameLine": true,
+		"powershell.codeFormatting.newLineAfterOpenBrace": true,
+		"powershell.codeFormatting.newLineAfterCloseBrace": true,
+		"powershell.codeFormatting.whitespaceBeforeOpenBrace": true,
+		"powershell.codeFormatting.whitespaceBeforeOpenParen": true,
+		"powershell.codeFormatting.whitespaceAroundOperator": true,
+		"powershell.codeFormatting.whitespaceAfterSeparator": true,
+		"powershell.codeFormatting.ignoreOneLineBlock": false,
+		"powershell.integratedConsole.showOnStartup": false,
+		"terminal.integrated.defaultProfile.windows": "PowerShell",
+		"files.exclude": {
+			"**/Thumbs.db": true,
+			"**/.DS_Store": true,
+			"**/desktop.ini": true,
+			"**/*.tmp": true,
+			"**/*.temp": true,
+			"**/logs/*.log": true
+		},
+		"search.exclude": {
+			"**/logs": true,
+			"**/temp": true,
+			"**/Temp": true
+		},
+		"editor.insertSpaces": true,
+		"editor.tabSize": 4,
+		"editor.detectIndentation": true,
+		"editor.rulers": [80, 120],
+		"editor.wordWrap": "bounded",
+		"editor.wordWrapColumn": 120,
+		"markdown.extension.toc.levels": "2..6",
+		"markdown.extension.preview.autoShowPreviewToSide": false,
+		"yaml.format.enable": true,
+		"yaml.validate": true,
+		"json.format.enable": true,
+		"git.ignoreLimitWarning": true,
+		"explorer.fileNesting.enabled": true,
+		"explorer.fileNesting.patterns": {
+			"*.ps1": "*.Tests.ps1, ${basename}.psd1",
+			"README.md": "LICENSE, CONTRIBUTING.md, CHANGELOG.md, .gitignore",
+			"package.json": "package-lock.json, yarn.lock, pnpm-lock.yaml"
+		}
+	},
+	"extensions": {
+		"recommendations": [
+			"ms-vscode.powershell",
+			"redhat.vscode-yaml",
+			"ms-vscode.vscode-json",
+			"davidanson.vscode-markdownlint",
+			"yzhang.markdown-all-in-one",
+			"ms-azuretools.vscode-azurecli",
+			"ms-vscode.azure-account",
+			"github.vscode-github-actions",
+			"ms-vscode.vscode-powershell-preview",
+			"streetsidesoftware.code-spell-checker",
+			"editorconfig.editorconfig",
+			"ms-vscode.vscode-eslint"
+		],
+		"unwantedRecommendations": [
+			"ms-vscode.vscode-typescript-next"
+		]
+	},
+	"tasks": {
+		"version": "2.0.0",
+		"tasks": [
+			{
+				"label": "Run Environment Validation",
+				"type": "shell",
+				"command": "powershell.exe",
+				"args": [
+					"-ExecutionPolicy", "Bypass",
+					"-File", "${workspaceFolder}/scripts/validation/Test-Environment.ps1"
+				],
+				"group": {
+					"kind": "test",
+					"isDefault": true
+				},
+				"presentation": {
+					"echo": true,
+					"reveal": "always",
+					"focus": false,
+					"panel": "shared",
+					"showReuseMessage": true,
+					"clear": false
+				},
+				"problemMatcher": []
+			},
+			{
+				"label": "Run Application Tests",
+				"type": "shell",
+				"command": "powershell.exe",
+				"args": [
+					"-ExecutionPolicy", "Bypass",
+					"-File", "${workspaceFolder}/scripts/validation/Test-Applications.ps1"
+				],
+				"group": "test",
+				"presentation": {
+					"echo": true,
+					"reveal": "always",
+					"focus": false,
+					"panel": "shared",
+					"showReuseMessage": true,
+					"clear": false
+				},
+				"problemMatcher": []
+			},
+			{
+				"label": "Setup GitHub Runner Environment",
+				"type": "shell",
+				"command": "powershell.exe",
+				"args": [
+					"-ExecutionPolicy", "Bypass",
+					"-File", "${workspaceFolder}/scripts/setup/Install-GitHubRunnerEnvironment.ps1"
+				],
+				"group": "build",
+				"presentation": {
+					"echo": true,
+					"reveal": "always",
+					"focus": true,
+					"panel": "dedicated",
+					"showReuseMessage": false,
+					"clear": true
+				},
+				"problemMatcher": [],
+				"runOptions": {
+					"runOn": "folderOpen"
+				}
+			},
+			{
+				"label": "Install Windows Features",
+				"type": "shell",
+				"command": "powershell.exe",
+				"args": [
+					"-ExecutionPolicy", "Bypass",
+					"-File", "${workspaceFolder}/scripts/setup/Install-WindowsFeatures.ps1"
+				],
+				"group": "build",
+				"presentation": {
+					"echo": true,
+					"reveal": "always",
+					"focus": false,
+					"panel": "shared"
+				},
+				"problemMatcher": []
+			},
+			{
+				"label": "Deploy Third Party Application",
+				"type": "shell",
+				"command": "powershell.exe",
+				"args": [
+					"-ExecutionPolicy", "Bypass",
+					"-File", "${workspaceFolder}/scripts/deployment/Deploy-ThirdPartyApplication.ps1"
+				],
+				"group": "build",
+				"presentation": {
+					"echo": true,
+					"reveal": "always",
+					"focus": false,
+					"panel": "shared"
+				},
+				"problemMatcher": []
+			},
+			{
+				"label": "Setup Scheduled Cleanup",
+				"type": "shell",
+				"command": "powershell.exe",
+				"args": [
+					"-ExecutionPolicy", "Bypass",
+					"-File", "${workspaceFolder}/scripts/cleanup/Setup-ScheduledCleanup.ps1"
+				],
+				"group": "build",
+				"presentation": {
+					"echo": true,
+					"reveal": "always",
+					"focus": false,
+					"panel": "shared"
+				},
+				"problemMatcher": []
+			},
+			{
+				"label": "Run Oracle Integration Tests",
+				"type": "shell",
+				"command": "powershell.exe",
+				"args": [
+					"-ExecutionPolicy", "Bypass",
+					"-File", "${workspaceFolder}/tests/integration/Test-OracleIntegration.ps1"
+				],
+				"group": "test",
+				"presentation": {
+					"echo": true,
+					"reveal": "always",
+					"focus": false,
+					"panel": "shared"
+				},
+				"problemMatcher": []
+			},
+			{
+				"label": "Cleanup Azure Resources (DRY RUN)",
+				"type": "shell",
+				"command": "powershell.exe",
+				"args": [
+					"-ExecutionPolicy", "Bypass",
+					"-File", "${workspaceFolder}/scripts/cleanup/Remove-AzureResourceGroup.ps1",
+					"-DryRun"
+				],
+				"group": "test",
+				"presentation": {
+					"echo": true,
+					"reveal": "always",
+					"focus": true,
+					"panel": "dedicated",
+					"showReuseMessage": false,
+					"clear": true
+				},
+				"problemMatcher": []
+			}
+		]
+	},
+	"launch": {
+		"version": "0.2.0",
+		"configurations": [
+			{
+				"name": "PowerShell: Launch Current File",
+				"type": "PowerShell",
+				"request": "launch",
+				"script": "${file}",
+				"cwd": "${workspaceFolder}"
+			},
+			{
+				"name": "PowerShell: Debug Environment Test",
+				"type": "PowerShell",
+				"request": "launch",
+				"script": "${workspaceFolder}/scripts/validation/Test-Environment.ps1",
+				"cwd": "${workspaceFolder}",
+				"args": []
+			},
+			{
+				"name": "PowerShell: Debug Application Test",
+				"type": "PowerShell",
+				"request": "launch",
+				"script": "${workspaceFolder}/scripts/validation/Test-Applications.ps1",
+				"cwd": "${workspaceFolder}",
+				"args": ["-IncludeOracleIntegration"]
+			}
+		]
+	}
+}
