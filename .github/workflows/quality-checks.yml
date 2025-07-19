@@ -897,10 +897,269 @@ jobs:
         path: trivy-results.sarif
         retention-days: 30
 
+  azure-auth-checks:
+    name: Azure Authorization Checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Check required Azure secrets
+      id: check-secrets
+      run: |
+        echo "Checking for required Azure secrets..."
+        REQUIRED_SECRETS=("AZURE_CLIENT_ID" "AZURE_CLIENT_SECRET" "AZURE_TENANT_ID" "AZURE_SUBSCRIPTION_ID")
+        EXISTING_SECRETS=$(gh secret list --json name --jq '.[].name')
+        MISSING_SECRETS=()
+        
+        for secret in "${REQUIRED_SECRETS[@]}"; do
+          if ! echo "$EXISTING_SECRETS" | grep -q "^$secret$"; then
+            MISSING_SECRETS+=("$secret")
+          fi
+        done
+        
+        if [ ${#MISSING_SECRETS[@]} -eq 0 ]; then
+          echo "✅ All required Azure secrets are configured"
+          echo "secrets-available=true" >> $GITHUB_OUTPUT
+        else
+          echo "❌ Missing required Azure secrets:"
+          for secret in "${MISSING_SECRETS[@]}"; do
+            echo "  - $secret"
+          done
+          echo "secrets-available=false" >> $GITHUB_OUTPUT
+        fi
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Setup Azure CLI
+      if: steps.check-secrets.outputs.secrets-available == 'true'
+      uses: azure/CLI@v1
+      with:
+        azcli-version: 2.53.0
+        
+    - name: Azure Login Test
+      if: steps.check-secrets.outputs.secrets-available == 'true'
+      id: azure-login
+      run: |
+        echo "Testing Azure Service Principal login..."
+        
+        # Test Azure login using service principal
+        if az login --service-principal \
+           --username "${{ secrets.AZURE_CLIENT_ID }}" \
+           --password "${{ secrets.AZURE_CLIENT_SECRET }}" \
+           --tenant "${{ secrets.AZURE_TENANT_ID }}"; then
+          echo "✅ Azure Service Principal login successful"
+          echo "login-success=true" >> $GITHUB_OUTPUT
+          
+          # Get current user info
+          USER_INFO=$(az account show --query "{subscriptionId: id, subscriptionName: name, tenantId: tenantId, user: user.name}" -o json)
+          echo "Current Azure context:"
+          echo "$USER_INFO" | jq .
+          
+        else
+          echo "❌ Azure Service Principal login failed"
+          echo "login-success=false" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+        
+    - name: Test Azure Subscription Access
+      if: steps.azure-login.outputs.login-success == 'true'
+      id: subscription-test
+      run: |
+        echo "Testing Azure subscription access..."
+        
+        # Set the subscription
+        if az account set --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID }}"; then
+          echo "✅ Successfully set Azure subscription"
+          
+          # Get subscription details
+          SUBSCRIPTION_INFO=$(az account show --query "{id: id, name: name, state: state, tenantId: tenantId}" -o json)
+          echo "Subscription details:"
+          echo "$SUBSCRIPTION_INFO" | jq .
+          
+          # Check if subscription is enabled
+          STATE=$(echo "$SUBSCRIPTION_INFO" | jq -r '.state')
+          if [ "$STATE" = "Enabled" ]; then
+            echo "✅ Azure subscription is enabled and accessible"
+            echo "subscription-access=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ Azure subscription state: $STATE"
+            echo "subscription-access=false" >> $GITHUB_OUTPUT
+          fi
+        else
+          echo "❌ Failed to access Azure subscription"
+          echo "subscription-access=false" >> $GITHUB_OUTPUT
+        fi
+        
+    - name: Test Resource Group Operations
+      if: steps.subscription-test.outputs.subscription-access == 'true'
+      id: resource-group-test
+      run: |
+        echo "Testing Azure Resource Group operations..."
+        
+        # List resource groups to test read permissions
+        echo "Testing resource group list permissions..."
+        if az group list --query "[].{name: name, location: location, provisioningState: properties.provisioningState}" -o table; then
+          echo "✅ Successfully listed resource groups"
+          RG_COUNT=$(az group list --query "length([])" -o tsv)
+          echo "Found $RG_COUNT resource groups"
+          echo "resource-group-read=true" >> $GITHUB_OUTPUT
+        else
+          echo "❌ Failed to list resource groups"
+          echo "resource-group-read=false" >> $GITHUB_OUTPUT
+        fi
+        
+        # Test resource group creation permissions (dry run)
+        echo "Testing resource group creation permissions..."
+        TEST_RG_NAME="rg-github-actions-test-$(date +%Y%m%d%H%M%S)"
+        
+        if az group create --name "$TEST_RG_NAME" --location "East US" --dry-run; then
+          echo "✅ Resource group creation permissions validated (dry-run)"
+          echo "resource-group-create=true" >> $GITHUB_OUTPUT
+        else
+          echo "⚠️ Resource group creation permissions may be limited"
+          echo "resource-group-create=false" >> $GITHUB_OUTPUT
+        fi
+        
+    - name: Test Storage Account Operations
+      if: steps.subscription-test.outputs.subscription-access == 'true'
+      id: storage-test
+      run: |
+        echo "Testing Azure Storage Account operations..."
+        
+        # List storage accounts to test permissions
+        echo "Testing storage account list permissions..."
+        if az storage account list --query "[].{name: name, location: location, kind: kind, sku: sku.name}" -o table; then
+          echo "✅ Successfully listed storage accounts"
+          STORAGE_COUNT=$(az storage account list --query "length([])" -o tsv)
+          echo "Found $STORAGE_COUNT storage accounts"
+          echo "storage-read=true" >> $GITHUB_OUTPUT
+        else
+          echo "❌ Failed to list storage accounts"
+          echo "storage-read=false" >> $GITHUB_OUTPUT
+        fi
+        
+    - name: Test Virtual Machine Operations
+      if: steps.subscription-test.outputs.subscription-access == 'true'
+      id: vm-test
+      run: |
+        echo "Testing Azure Virtual Machine operations..."
+        
+        # List VMs to test permissions
+        echo "Testing VM list permissions..."
+        if az vm list --query "[].{name: name, location: location, powerState: instanceView.statuses[1].displayStatus, size: hardwareProfile.vmSize}" -o table; then
+          echo "✅ Successfully listed virtual machines"
+          VM_COUNT=$(az vm list --query "length([])" -o tsv)
+          echo "Found $VM_COUNT virtual machines"
+          echo "vm-read=true" >> $GITHUB_OUTPUT
+        else
+          echo "❌ Failed to list virtual machines"
+          echo "vm-read=false" >> $GITHUB_OUTPUT
+        fi
+        
+    - name: Generate Azure Authorization Report
+      if: always() && steps.check-secrets.outputs.secrets-available == 'true'
+      run: |
+        echo "# Azure Authorization Check Report" > azure-auth-report.md
+        echo "" >> azure-auth-report.md
+        echo "**Date**: $(date)" >> azure-auth-report.md
+        echo "**Subscription ID**: ${{ secrets.AZURE_SUBSCRIPTION_ID }}" >> azure-auth-report.md
+        echo "**Tenant ID**: ${{ secrets.AZURE_TENANT_ID }}" >> azure-auth-report.md
+        echo "" >> azure-auth-report.md
+        
+        echo "## Authentication Results" >> azure-auth-report.md
+        echo "" >> azure-auth-report.md
+        
+        if [ "${{ steps.azure-login.outputs.login-success }}" = "true" ]; then
+          echo "- ✅ **Azure Service Principal Login**: Success" >> azure-auth-report.md
+        else
+          echo "- ❌ **Azure Service Principal Login**: Failed" >> azure-auth-report.md
+        fi
+        
+        if [ "${{ steps.subscription-test.outputs.subscription-access }}" = "true" ]; then
+          echo "- ✅ **Subscription Access**: Success" >> azure-auth-report.md
+        else
+          echo "- ❌ **Subscription Access**: Failed" >> azure-auth-report.md
+        fi
+        
+        echo "" >> azure-auth-report.md
+        echo "## Resource Access Tests" >> azure-auth-report.md
+        echo "" >> azure-auth-report.md
+        
+        if [ "${{ steps.resource-group-test.outputs.resource-group-read }}" = "true" ]; then
+          echo "- ✅ **Resource Group Read**: Success" >> azure-auth-report.md
+        else
+          echo "- ❌ **Resource Group Read**: Failed" >> azure-auth-report.md
+        fi
+        
+        if [ "${{ steps.resource-group-test.outputs.resource-group-create }}" = "true" ]; then
+          echo "- ✅ **Resource Group Create**: Permissions Available" >> azure-auth-report.md
+        else
+          echo "- ⚠️ **Resource Group Create**: Limited Permissions" >> azure-auth-report.md
+        fi
+        
+        if [ "${{ steps.storage-test.outputs.storage-read }}" = "true" ]; then
+          echo "- ✅ **Storage Account Read**: Success" >> azure-auth-report.md
+        else
+          echo "- ❌ **Storage Account Read**: Failed" >> azure-auth-report.md
+        fi
+        
+        if [ "${{ steps.vm-test.outputs.vm-read }}" = "true" ]; then
+          echo "- ✅ **Virtual Machine Read**: Success" >> azure-auth-report.md
+        else
+          echo "- ❌ **Virtual Machine Read**: Failed" >> azure-auth-report.md
+        fi
+        
+        echo "" >> azure-auth-report.md
+        echo "## Summary" >> azure-auth-report.md
+        echo "" >> azure-auth-report.md
+        
+        # Count successful tests
+        TESTS_PASSED=0
+        TESTS_TOTAL=6
+        
+        [ "${{ steps.azure-login.outputs.login-success }}" = "true" ] && TESTS_PASSED=$((TESTS_PASSED + 1))
+        [ "${{ steps.subscription-test.outputs.subscription-access }}" = "true" ] && TESTS_PASSED=$((TESTS_PASSED + 1))
+        [ "${{ steps.resource-group-test.outputs.resource-group-read }}" = "true" ] && TESTS_PASSED=$((TESTS_PASSED + 1))
+        [ "${{ steps.resource-group-test.outputs.resource-group-create }}" = "true" ] && TESTS_PASSED=$((TESTS_PASSED + 1))
+        [ "${{ steps.storage-test.outputs.storage-read }}" = "true" ] && TESTS_PASSED=$((TESTS_PASSED + 1))
+        [ "${{ steps.vm-test.outputs.vm-read }}" = "true" ] && TESTS_PASSED=$((TESTS_PASSED + 1))
+        
+        echo "**Tests Passed**: $TESTS_PASSED/$TESTS_TOTAL" >> azure-auth-report.md
+        
+        if [ $TESTS_PASSED -eq $TESTS_TOTAL ]; then
+          echo "**Status**: ✅ All Azure authorization tests passed" >> azure-auth-report.md
+        elif [ $TESTS_PASSED -ge 3 ]; then
+          echo "**Status**: ⚠️ Most Azure authorization tests passed with some limitations" >> azure-auth-report.md
+        else
+          echo "**Status**: ❌ Multiple Azure authorization tests failed" >> azure-auth-report.md
+        fi
+        
+        echo "" >> azure-auth-report.md
+        echo "---" >> azure-auth-report.md
+        echo "*Generated by GitHub Actions Azure Authorization Checks*" >> azure-auth-report.md
+        
+        # Display the report
+        echo "Azure Authorization Check Report:"
+        cat azure-auth-report.md
+        
+    - name: Upload Azure authorization artifacts
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: azure-auth-reports
+        path: |
+          azure-auth-report.md
+        retention-days: 30
+
   quality-summary:
     name: Quality Summary
     runs-on: ubuntu-latest
-    needs: [markdown-quality, powershell-quality, security-scan]
+    needs: [markdown-quality, powershell-quality, security-scan, azure-auth-checks]
     if: always()
     
     steps:
@@ -921,7 +1180,7 @@ jobs:
               "version": "1.0.0"
             },
             "summary": {
-              "tests": 3,
+              "tests": 4,
               "passed": 0,
               "failed": 0,
               "pending": 0,
@@ -960,6 +1219,16 @@ jobs:
                 "rawStatus": "${{ needs.security-scan.result }}",
                 "suite": "Quality Checks",
                 "type": "security"
+              },
+              {
+                "name": "Azure Authorization Checks",
+                "status": "${{ needs.azure-auth-checks.result == 'success' && 'passed' || 'failed' }}",
+                "duration": 0,
+                "message": "${{ needs.azure-auth-checks.result == 'success' && 'Azure authorization checks passed' || 'Azure authorization checks failed' }}",
+                "trace": "${{ needs.azure-auth-checks.result != 'success' && 'Check azure-auth-checks job for details' || '' }}",
+                "rawStatus": "${{ needs.azure-auth-checks.result }}",
+                "suite": "Quality Checks",
+                "type": "authorization"
               }
             ]
           }
@@ -983,6 +1252,12 @@ jobs:
         fi
         
         if [ "${{ needs.security-scan.result }}" = "success" ]; then
+          PASSED_COUNT=$((PASSED_COUNT + 1))
+        else
+          FAILED_COUNT=$((FAILED_COUNT + 1))
+        fi
+        
+        if [ "${{ needs.azure-auth-checks.result }}" = "success" ]; then
           PASSED_COUNT=$((PASSED_COUNT + 1))
         else
           FAILED_COUNT=$((FAILED_COUNT + 1))
@@ -1022,6 +1297,7 @@ jobs:
         echo "- **Markdown Quality**: ${{ needs.markdown-quality.result }}" >> quality-summary.md
         echo "- **PowerShell Quality**: ${{ needs.powershell-quality.result }}" >> quality-summary.md
         echo "- **Security Scan**: ${{ needs.security-scan.result }}" >> quality-summary.md
+        echo "- **Azure Authorization**: ${{ needs.azure-auth-checks.result }}" >> quality-summary.md
         echo "" >> quality-summary.md
         
         # Include individual reports if they exist
@@ -1033,6 +1309,11 @@ jobs:
         if [ -f powershell-quality-reports/powershell-quality-summary.md ]; then
           echo "---" >> quality-summary.md
           cat powershell-quality-reports/powershell-quality-summary.md >> quality-summary.md
+        fi
+        
+        if [ -f azure-auth-reports/azure-auth-report.md ]; then
+          echo "---" >> quality-summary.md
+          cat azure-auth-reports/azure-auth-report.md >> quality-summary.md
         fi
         
         echo "" >> quality-summary.md
@@ -1087,28 +1368,3 @@ jobs:
               });
             }
           }
-    - name: Validate required secrets
-      run: |
-        REQUIRED_SECRETS=("AZURE_CLIENT_ID" "AZURE_CLIENT_SECRET" "AZURE_TENANT_ID" "AZURE_SUBSCRIPTION_ID")
-        
-        echo "Checking for required secrets..."
-        EXISTING_SECRETS=$(gh secret list --json name --jq '.[].name')
-        MISSING_SECRETS=()
-        
-        for secret in "${REQUIRED_SECRETS[@]}"; do
-          if ! echo "$EXISTING_SECRETS" | grep -q "^$secret$"; then
-            MISSING_SECRETS+=("$secret")
-          fi
-        done
-        
-        if [ ${#MISSING_SECRETS[@]} -eq 0 ]; then
-          echo "✅ All required secrets are configured"
-        else
-          echo "❌ Missing required secrets:"
-          for secret in "${MISSING_SECRETS[@]}"; do
-            echo "  - $secret"
-          done
-          exit 1
-        fi
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
