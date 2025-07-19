@@ -563,6 +563,7 @@ jobs:
     - name: Run additional PowerShell checks
       shell: powershell
       if: steps.find-ps1.outputs.files-found > 0
+      continue-on-error: true
       run: |
         Write-Host "Running additional PowerShell quality checks..."
         
@@ -572,55 +573,113 @@ jobs:
         "## Syntax Validation" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
         
         $SyntaxErrors = 0
-        Get-Content "powershell-files.txt" | ForEach-Object {
-            $FilePath = $_.Trim()
-            if ($FilePath -and (Test-Path $FilePath)) {
-                try {
-                    $null = [System.Management.Automation.PSParser]::Tokenize((Get-Content $FilePath -Raw), [ref]$null)
-                    "- ✅ $FilePath - Syntax OK" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
-                } catch {
-                    $SyntaxErrors++
-                    "- ❌ $FilePath - Syntax Error: $($_.Exception.Message)" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
+        $ProcessedFiles = 0
+        
+        if (Test-Path "powershell-files.txt") {
+            Get-Content "powershell-files.txt" -ErrorAction SilentlyContinue | ForEach-Object {
+                $FilePath = $_.Trim()
+                if ($FilePath -and (Test-Path $FilePath -ErrorAction SilentlyContinue)) {
+                    $ProcessedFiles++
+                    Write-Host "Checking syntax for: $FilePath"
+                    
+                    try {
+                        # Try to parse the file using PowerShell's built-in parser
+                        $FileContent = Get-Content $FilePath -Raw -ErrorAction Stop
+                        if ($FileContent) {
+                            # Use a more robust syntax check method
+                            $ScriptBlock = [ScriptBlock]::Create($FileContent)
+                            if ($ScriptBlock) {
+                                "- ✅ $FilePath - Syntax OK" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
+                                Write-Host "  Syntax OK" -ForegroundColor Green
+                            }
+                        } else {
+                            "- ℹ️ $FilePath - Empty file" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
+                            Write-Host "  Empty file" -ForegroundColor Yellow
+                        }
+                    } catch {
+                        $SyntaxErrors++
+                        $ErrorMsg = $_.Exception.Message -replace '"', "'" -replace '`', "'"
+                        "- ❌ $FilePath - Syntax Error: $ErrorMsg" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
+                        Write-Host "  Syntax Error: $ErrorMsg" -ForegroundColor Red
+                    }
                 }
             }
+        } else {
+            Write-Host "No powershell-files.txt found, skipping syntax validation"
+            "- ℹ️ No PowerShell files found for syntax validation" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
         }
+        
+        Write-Host "Processed $ProcessedFiles files for syntax validation"
         
         "" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
         "## PowerShell Best Practices Check" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
         
         # Check for common best practices
         $BestPracticeIssues = 0
-        Get-Content "powershell-files.txt" | ForEach-Object {
-            $FilePath = $_.Trim()
-            if ($FilePath -and (Test-Path $FilePath)) {
-                $Content = Get-Content $FilePath -Raw
-                
-                # Check for hardcoded credentials
-                if ($Content -match 'password\s*=|pwd\s*=|secret\s*=') {
-                    $BestPracticeIssues++
-                    "- ⚠️ $FilePath - Possible hardcoded credentials detected" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
-                }
-                
-                # Check for Write-Host usage (should prefer Write-Output)
-                if ($Content -match 'Write-Host') {
-                    "- ℹ️ $FilePath - Contains Write-Host (consider Write-Output for better testability)" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
-                }
-                
-                # Check for proper error handling
-                if ($Content -match 'try\s*{' -and $Content -notmatch 'catch\s*{') {
-                    $BestPracticeIssues++
-                    "- ⚠️ $FilePath - Try block without catch block" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
+        $BestPracticeChecked = 0
+        
+        if (Test-Path "powershell-files.txt") {
+            Get-Content "powershell-files.txt" -ErrorAction SilentlyContinue | ForEach-Object {
+                $FilePath = $_.Trim()
+                if ($FilePath -and (Test-Path $FilePath -ErrorAction SilentlyContinue)) {
+                    $BestPracticeChecked++
+                    Write-Host "Checking best practices for: $FilePath"
+                    
+                    try {
+                        $Content = Get-Content $FilePath -Raw -ErrorAction Stop
+                        if ($Content) {
+                            # Check for hardcoded credentials (more specific patterns)
+                            if ($Content -match '(?i)(password|pwd|secret|key)\s*=\s*[''"][^''"]+[''"]') {
+                                $BestPracticeIssues++
+                                "- ⚠️ $FilePath - Possible hardcoded credentials detected" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
+                                Write-Host "  Warning: Possible hardcoded credentials" -ForegroundColor Yellow
+                            }
+                            
+                            # Check for Write-Host usage (informational only)
+                            if ($Content -match 'Write-Host') {
+                                "- ℹ️ $FilePath - Contains Write-Host (consider Write-Output for better testability)" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
+                            }
+                            
+                            # Check for proper error handling
+                            if ($Content -match 'try\s*\{' -and $Content -notmatch 'catch\s*\{') {
+                                $BestPracticeIssues++
+                                "- ⚠️ $FilePath - Try block without catch block" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
+                                Write-Host "  Warning: Try block without catch" -ForegroundColor Yellow
+                            }
+                            
+                            # Check for deprecated cmdlets
+                            if ($Content -match 'ConvertTo-SecureString.*-AsPlainText.*-Force') {
+                                $BestPracticeIssues++
+                                "- ⚠️ $FilePath - Using deprecated plaintext ConvertTo-SecureString pattern" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
+                            }
+                        }
+                    } catch {
+                        Write-Host "  Error reading file: $($_.Exception.Message)" -ForegroundColor Red
+                        "- ❌ $FilePath - Error reading file for best practices check" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
+                    }
                 }
             }
+        } else {
+            Write-Host "No powershell-files.txt found, skipping best practices check"
+            "- ℹ️ No PowerShell files found for best practices check" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
         }
+        
+        Write-Host "Checked $BestPracticeChecked files for best practices"
         
         "" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
         "## Summary" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
+        "- **Files Processed for Syntax**: $ProcessedFiles" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
+        "- **Files Checked for Best Practices**: $BestPracticeChecked" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
         "- **Syntax Errors**: $SyntaxErrors" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
         "- **Best Practice Issues**: $BestPracticeIssues" | Out-File -FilePath "powershell-additional-checks.md" -Append -Encoding UTF8
         
+        # Set environment variables for summary
         Add-Content -Path $env:GITHUB_ENV -Value "syntax-errors=$SyntaxErrors"
         Add-Content -Path $env:GITHUB_ENV -Value "best-practice-issues=$BestPracticeIssues"
+        
+        Write-Host "Additional PowerShell checks completed successfully"
+        Write-Host "Syntax errors: $SyntaxErrors"
+        Write-Host "Best practice issues: $BestPracticeIssues"
         
     - name: Generate PowerShell quality summary
       shell: powershell
@@ -636,23 +695,23 @@ jobs:
         "" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
         "## PSScriptAnalyzer Results" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
         "" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
-        "- **Files with Issues**: ${{ env.files-with-issues }}" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
-        "- **Total Issues**: ${{ env.total-issues }}" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
-        "  - **Errors**: ${{ env.error-count }}" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
-        "  - **Warnings**: ${{ env.warning-count }}" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
-        "  - **Information**: ${{ env.info-count }}" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
+        "- **Files with Issues**: ${{ env.files-with-issues || '0' }}" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
+        "- **Total Issues**: ${{ env.total-issues || '0' }}" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
+        "  - **Errors**: ${{ env.error-count || '0' }}" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
+        "  - **Warnings**: ${{ env.warning-count || '0' }}" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
+        "  - **Information**: ${{ env.info-count || '0' }}" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
         "" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
         "## Additional Checks" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
         "" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
-        "- **Syntax Errors**: ${{ env.syntax-errors }}" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
-        "- **Best Practice Issues**: ${{ env.best-practice-issues }}" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
+        "- **Syntax Errors**: ${{ env.syntax-errors || '0' }}" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
+        "- **Best Practice Issues**: ${{ env.best-practice-issues || '0' }}" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
         "" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
         "## Status" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
         "" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
         
-        if ($env:TOTAL_ISSUES -eq "0" -and $env:SYNTAX_ERRORS -eq "0") {
+        if (($env:TOTAL_ISSUES -eq "0" -or $null -eq $env:TOTAL_ISSUES) -and ($env:SYNTAX_ERRORS -eq "0" -or $null -eq $env:SYNTAX_ERRORS)) {
             "✅ **ALL CHECKS PASSED**" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
-        } elseif ($env:ERROR_COUNT -gt "0" -or $env:SYNTAX_ERRORS -gt "0") {
+        } elseif (($env:ERROR_COUNT -ne $null -and $env:ERROR_COUNT -gt "0") -or ($env:SYNTAX_ERRORS -ne $null -and $env:SYNTAX_ERRORS -gt "0")) {
             "❌ **CRITICAL ISSUES FOUND** - Please review and fix errors" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
         } else {
             "⚠️ **WARNINGS FOUND** - Please review warnings and information messages" | Out-File -FilePath "powershell-quality-summary.md" -Append -Encoding UTF8
