@@ -178,6 +178,7 @@ env:
 You can modify the workflow to enforce different quality standards:
 
 ### Strict Mode (Fail on Warnings)
+
 ```yaml
 - name: Check for warnings
   if: env.warning-count > 0
@@ -186,7 +187,8 @@ You can modify the workflow to enforce different quality standards:
     exit 1
 ```
 
-### Ignore Specific Files
+## Enhanced Logging with Azure Monitor
+
 ```yaml
 - name: Find PowerShell files
   run: |
@@ -200,6 +202,7 @@ You can modify the workflow to enforce different quality standards:
 ```
 
 ### Custom Reporting
+
 ```yaml
 - name: Generate custom report
   run: |
@@ -215,6 +218,7 @@ You can modify the workflow to enforce different quality standards:
 ## Integration with Other Tools
 
 ### SonarQube Integration
+
 ```yaml
 - name: SonarQube Scan
   uses: sonarqube-quality-gate-action@master
@@ -223,6 +227,7 @@ You can modify the workflow to enforce different quality standards:
 ```
 
 ### CodeQL Integration
+
 ```yaml
 - name: Initialize CodeQL
   uses: github/codeql-action/init@v3
@@ -234,6 +239,7 @@ You can modify the workflow to enforce different quality standards:
 ```
 
 ### Dependency Checking
+
 ```yaml
 - name: Run Snyk to check for vulnerabilities
   uses: snyk/actions/powershell@master
@@ -244,6 +250,10 @@ You can modify the workflow to enforce different quality standards:
 ## Troubleshooting Common Issues
 
 ### False Positive Rules
+
+If you encounter false positives in your PowerShell scripts, you can suppress specific rules:
+
+```powershell
 Add rule suppressions in your PowerShell code:
 ```powershell
 # Suppress specific rule for this line
@@ -258,7 +268,9 @@ function Get-Something {
 ```
 
 ### Markdown Line Length Issues
+
 Use HTML for long links:
+
 ```markdown
 <!-- Instead of -->
 [Very long link text that exceeds the line length limit](https://very-long-url-that-makes-the-line-too-long.com)
@@ -268,7 +280,9 @@ Use HTML for long links:
 ```
 
 ### Performance Optimization
+
 For large repositories, consider:
+
 ```yaml
 # Limit scope to changed files only
 - name: Get changed files

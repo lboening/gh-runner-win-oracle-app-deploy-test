@@ -7,29 +7,34 @@ The enhanced logging utility provides comprehensive integration with Azure Monit
 ## Key Improvements
 
 ### 1. **Structured JSON Logging**
+
 - **Before**: Simple text-based logs
 - **After**: Rich JSON structure with metadata
 - **Benefits**: Better querying, filtering, and analysis in Azure Monitor
 
 ### 2. **Azure Monitor Integration**
+
 - Direct integration with Log Analytics workspace
 - Support for both legacy Data Collector API and new Logs Ingestion API
 - Automatic retry logic and error handling
 - Batching for improved performance
 
 ### 3. **Enhanced Metadata**
+
 - Operation and correlation IDs for tracing
 - Performance metrics (memory usage, CPU time, duration)
 - Azure resource context information
 - Custom properties and metrics support
 
 ### 4. **Performance Optimization**
+
 - Log batching to reduce API calls
 - Asynchronous sending to avoid blocking
 - Log file rotation and compression
 - Configurable retry policies
 
 ### 5. **Advanced Features**
+
 - Performance tracking wrapper (`Measure-LoggedOperation`)
 - Multiple log levels including Trace and Critical
 - Enhanced Windows Event Log integration
@@ -40,6 +45,7 @@ The enhanced logging utility provides comprehensive integration with Azure Monit
 ### Basic Setup
 
 1. **Configure Azure Monitor workspace**:
+
 ```powershell
 .\scripts\utilities\Configure-AzureMonitor.ps1 `
     -WorkspaceId "your-workspace-id" `
@@ -51,6 +57,7 @@ The enhanced logging utility provides comprehensive integration with Azure Monit
 ```
 
 2. **Update existing scripts** to use enhanced logging:
+
 ```powershell
 # Replace this:
 . "$PSScriptRoot\..\utilities\Write-Log.ps1"
@@ -99,11 +106,13 @@ The `azure-monitor-config.json` file contains:
 ## Usage Examples
 
 ### Basic Enhanced Logging
+
 ```powershell
 Write-LogEnhanced -Message "Application starting" -Level "Info" -EnableAzureMonitor
 ```
 
 ### Logging with Custom Properties
+
 ```powershell
 Write-LogEnhanced -Message "User login successful" `
     -Level "Success" `
@@ -117,6 +126,7 @@ Write-LogEnhanced -Message "User login successful" `
 ```
 
 ### Performance Tracking
+
 ```powershell
 $Result = Measure-LoggedOperation -OperationName "Database Query" -ScriptBlock {
     # Your operation here
@@ -125,6 +135,7 @@ $Result = Measure-LoggedOperation -OperationName "Database Query" -ScriptBlock {
 ```
 
 ### Error Logging with Metrics
+
 ```powershell
 Write-LogEnhanced -Message "API call failed" `
     -Level "Error" `
@@ -146,6 +157,7 @@ Write-LogEnhanced -Message "API call failed" `
 Use the provided KQL queries in `docs/AzureMonitor-KQL-Queries.kql` to:
 
 ### Monitor Application Health
+
 ```kql
 GitHubRunnerLogs_CL
 | where TimeGenerated >= ago(1h)
@@ -157,6 +169,7 @@ GitHubRunnerLogs_CL
 ```
 
 ### Track Operation Performance
+
 ```kql
 GitHubRunnerLogs_CL
 | where EventName_s == "OperationComplete"
@@ -168,6 +181,7 @@ GitHubRunnerLogs_CL
 ```
 
 ### Find Correlated Issues
+
 ```kql
 GitHubRunnerLogs_CL
 | where OperationId_g == "specific-operation-id"
@@ -177,30 +191,35 @@ GitHubRunnerLogs_CL
 ## Benefits for Azure Monitor
 
 ### 1. **Rich Querying Capabilities**
+
 - Filter by any custom property
 - Aggregate performance metrics
 - Trace operations across components
 - Correlate events using operation IDs
 
 ### 2. **Advanced Analytics**
+
 - Trend analysis over time
 - Performance regression detection
 - Error pattern identification
 - Resource utilization monitoring
 
 ### 3. **Alerting and Monitoring**
+
 - Real-time error rate alerts
 - Performance threshold monitoring
 - Custom metric-based alerts
 - Integration with Azure Monitor alerts
 
 ### 4. **Dashboards and Visualization**
+
 - Azure Monitor Workbooks integration
 - Custom dashboard creation
 - Performance trend visualization
 - Operational health monitoring
 
 ### 5. **Integration with Azure Services**
+
 - Azure Logic Apps for automated responses
 - Azure Functions for custom processing
 - Power BI for business intelligence
@@ -209,6 +228,7 @@ GitHubRunnerLogs_CL
 ## Migration Guide
 
 ### Step 1: Update Scripts
+
 Replace `Write-Log` calls with `Write-LogEnhanced`:
 
 ```powershell
@@ -220,6 +240,7 @@ Write-LogEnhanced "Operation completed" -Level "Success" -EnableAzureMonitor
 ```
 
 ### Step 2: Add Performance Tracking
+
 Wrap operations with performance measurement:
 
 ```powershell
@@ -235,6 +256,7 @@ Measure-LoggedOperation -OperationName "Application Deployment" -ScriptBlock {
 ```
 
 ### Step 3: Configure Azure Monitor
+
 Run the configuration script once per environment:
 
 ```powershell
@@ -244,7 +266,9 @@ Run the configuration script once per environment:
 ## Best Practices
 
 ### 1. **Consistent Component Names**
+
 Use standardized component names across your scripts:
+
 - `GitHubRunner` - Main runner operations
 - `Deployment` - Application deployments
 - `Validation` - Testing and validation
@@ -252,20 +276,26 @@ Use standardized component names across your scripts:
 - `Setup` - Environment setup
 
 ### 2. **Meaningful Operation Names**
+
 Use descriptive operation names for tracking:
+
 - `"Oracle Database Connection"`
 - `"IIS Website Deployment"`
 - `"Azure Resource Cleanup"`
 
 ### 3. **Custom Properties Standards**
+
 Define consistent property names:
+
 - `UserName` for user identification
 - `ResourceName` for Azure resource names
 - `Duration` for operation timing
 - `StatusCode` for HTTP responses
 
 ### 4. **Error Handling**
+
 Always include error context:
+
 ```powershell
 try {
     # Operation
@@ -303,6 +333,7 @@ catch {
 ### Debugging
 
 Enable verbose logging to troubleshoot issues:
+
 ```powershell
 $VerbosePreference = "Continue"
 Write-LogEnhanced -Message "Test" -EnableAzureMonitor -Verbose

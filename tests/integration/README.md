@@ -45,12 +45,14 @@ This directory contains comprehensive integration tests for Oracle Database func
 This test verifies that the Oracle listener is responding on localhost:
 
 **What it tests:**
+
 - ✅ Oracle service status (OracleServiceXE, OracleXETNSListener)
 - ✅ TCP connection to Oracle port (default: 1521)
 - ✅ Port listening verification using netstat
 - ✅ TNSPing connectivity test to Oracle service
 
 **Parameters:**
+
 ```powershell
 -OracleHost      # Oracle host (default: localhost)
 -OraclePort      # Oracle port (default: 1521)
@@ -59,6 +61,7 @@ This test verifies that the Oracle listener is responding on localhost:
 ```
 
 **Example output:**
+
 ```
 === Oracle Listener Integration Test ===
 Host: localhost
@@ -86,6 +89,7 @@ Test 4: TNSPing Listener Test
 This test verifies that Oracle clients can successfully login to the local instance:
 
 **What it tests:**
+
 - ✅ SQL*Plus connection and authentication
 - ✅ ODBC connection capability (if available)
 - ✅ ODP.NET connection capability (if available)
@@ -93,6 +97,7 @@ This test verifies that Oracle clients can successfully login to the local insta
 - ✅ User session information retrieval
 
 **Parameters:**
+
 ```powershell
 -TestUsername    # Oracle username (default: system)
 -TestPassword    # Oracle password (if not provided, tries common defaults)
@@ -103,11 +108,13 @@ This test verifies that Oracle clients can successfully login to the local insta
 ```
 
 **Authentication Methods Tested:**
+
 1. **SQL*Plus** - Native Oracle command-line tool
 2. **ODBC** - Open Database Connectivity (if drivers installed)
 3. **ODP.NET** - Oracle Data Provider for .NET (if assemblies available)
 
 **Example output:**
+
 ```
 === Oracle Client Login Integration Test ===
 Username: system
@@ -137,6 +144,7 @@ Test 3: ODP.NET Connection Test
 Orchestrates all Oracle integration tests with comprehensive reporting:
 
 **Features:**
+
 - ✅ Sequential test execution with proper error handling
 - ✅ Comprehensive logging and reporting
 - ✅ JSON test results export
@@ -145,6 +153,7 @@ Orchestrates all Oracle integration tests with comprehensive reporting:
 - ✅ Environment information collection
 
 **Parameters:**
+
 ```powershell
 -ListenerOnly        # Run only listener tests
 -LoginOnly          # Run only login tests
@@ -167,6 +176,7 @@ $env:ORACLE_SID = "XE"
 ### Default Oracle Passwords Tested
 
 When no password is provided, the tests try these common defaults:
+
 - `oracle`
 - `password`
 - `123456`
@@ -177,6 +187,7 @@ When no password is provided, the tests try these common defaults:
 ### Oracle Client Requirements
 
 For full test coverage, ensure these are installed:
+
 - **Oracle Instant Client** or **Oracle Database XE**
 - **Oracle ODBC Driver** (optional, for ODBC tests)
 - **Oracle Data Provider for .NET** (optional, for ODP.NET tests)
@@ -186,6 +197,7 @@ For full test coverage, ensure these are installed:
 ### Log Files
 
 Tests create detailed logs in `C:\Logs\`:
+
 - `OracleIntegrationTest_YYYYMMDD_HHMMSS.log` - Main test log
 - `OracleIntegrationTest_YYYYMMDD_HHMMSS_Results.json` - JSON results
 
