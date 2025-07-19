@@ -56,7 +56,12 @@
 			"package.json": "package-lock.json, yarn.lock, pnpm-lock.yaml"
 		},
 		"cSpell.words": [
-			"countif"
+			"azurecli",
+			"countif",
+			"davidanson",
+			"psscriptanalyzer",
+			"SARIF",
+			"yzhang"
 		]
 	},
 	"extensions": {
@@ -141,7 +146,7 @@
 				},
 				"problemMatcher": [],
 				"runOptions": {
-					"runOn": "folderOpen"
+					"runOn": "default"
 				}
 			},
 			{
