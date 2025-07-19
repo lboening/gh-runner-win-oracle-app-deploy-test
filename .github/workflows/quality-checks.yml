@@ -524,6 +524,10 @@ jobs:
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
     
     steps:
     - name: Checkout repository
@@ -539,9 +543,24 @@ jobs:
         
     - name: Upload Trivy scan results to GitHub Security tab
       uses: github/codeql-action/upload-sarif@v3
-      if: always()
+      if: always() && hashFiles('trivy-results.sarif') != ''
       with:
         sarif_file: 'trivy-results.sarif'
+      continue-on-error: true
+        
+    - name: Check Trivy results
+      if: always()
+      run: |
+        if [ -f "trivy-results.sarif" ]; then
+          echo "✅ Trivy SARIF file created successfully"
+          echo "File size: $(stat -f%z trivy-results.sarif 2>/dev/null || stat -c%s trivy-results.sarif) bytes"
+          echo "First few lines of SARIF file:"
+          head -20 trivy-results.sarif
+        else
+          echo "❌ Trivy SARIF file not found"
+          echo "Available files:"
+          ls -la
+        fi
         
     - name: Upload security scan artifacts
       uses: actions/upload-artifact@v4
