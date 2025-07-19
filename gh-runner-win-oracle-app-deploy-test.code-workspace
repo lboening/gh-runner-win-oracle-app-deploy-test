@@ -54,7 +54,10 @@
 			"*.ps1": "*.Tests.ps1, ${basename}.psd1",
 			"README.md": "LICENSE, CONTRIBUTING.md, CHANGELOG.md, .gitignore",
 			"package.json": "package-lock.json, yarn.lock, pnpm-lock.yaml"
-		}
+		},
+		"cSpell.words": [
+			"countif"
+		]
 	},
 	"extensions": {
 		"recommendations": [

@@ -277,7 +277,7 @@ function Send-ToAzureMonitorBatch {
     
     for ($i = 0; $i -lt $RetryCount; $i++) {
         try {
-            $Response = Invoke-RestMethod -Uri $Uri -Method $Method -ContentType $ContentType -Headers $Headers -Body $Body -TimeoutSec 30
+            Invoke-RestMethod -Uri $Uri -Method $Method -ContentType $ContentType -Headers $Headers -Body $Body -TimeoutSec 30
             break
         }
         catch {
